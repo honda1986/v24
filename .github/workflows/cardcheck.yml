@@ -1,0 +1,16 @@
+name: cardcheck
+# 出走表の取得元(公式 と info.kyotei.fun)で数値が一致するかを突き合わせる。
+on:
+  workflow_dispatch:
+jobs:
+  cardcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install numpy requests beautifulsoup4
+      - run: python officialcard.py 24 10 --dump
+      - run: python cardcheck.py

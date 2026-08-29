@@ -1,0 +1,12 @@
+# GitHub Pages 用。予想サイト(index.html)と history.json だけを公開する。
+include:
+  - history.json
+exclude:
+  - cache
+  - state
+  - before
+  - wave
+  - model
+  - motor
+  - "*.py"
+  - "*.md"

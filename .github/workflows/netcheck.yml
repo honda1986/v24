@@ -1,0 +1,14 @@
+name: netcheck
+# 取得元に届くか・解析できるかを確かめるだけ。手で回す用。
+on:
+  workflow_dispatch:
+jobs:
+  netcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install numpy requests beautifulsoup4
+      - run: python netcheck.py

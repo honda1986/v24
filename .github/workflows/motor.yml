@@ -1,0 +1,39 @@
+name: motor
+# モーター純度を1日1回だけ作って commit する。
+# v23 は15分ループのたびに v22 の kfile を sparse checkout していたが、
+# 10分ループでそれをやると重すぎるので分離した。
+on:
+  schedule:
+    - cron: "0 21 * * *"      # UTC 21:00 = JST 6:00
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  motor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install numpy
+      - name: v22 の Kファイルを取る
+        uses: actions/checkout@v4
+        with:
+          repository: honda1986/v22
+          path: v22src
+          sparse-checkout: kfile
+      - name: モーター純度を作る
+        run: python motor.py --kfile v22src/kfile --days 400 --out motor/latest.json
+      - name: 買った記録に結果を入れる（予想サイト用）
+        run: python settle.py --kfile v22src/kfile || true
+      - name: commit
+        run: |
+          git config user.name  github-actions
+          git config user.email github-actions@github.com
+          git add motor/latest.json history.json 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "motor+settle: $(date -u +%Y%m%d)"
+          git pull --rebase --autostash || true
+          git push

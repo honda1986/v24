@@ -1,0 +1,52 @@
+name: yosou
+# 10分ごとに動き、ネット締切まで 4〜30分 のレースだけ処理する。
+#
+# ★ GitHub Actions の schedule は遅延する(メモ §6)。
+#   1回のジョブの中で3回まわして、10分の穴を埋めている。
+#   通知済みは state/ に残すので、二重に飛ぶことはない。
+#
+# ★ ジョブ上限に当たると、通知済みの記録ごと丸ごと捨てられる(実測)。
+#   ・yosou.py に持ち時間(--budget)を持たせ、超えたら次の回に回す
+#   ・ループ全体にも締切を置き、上限の手前で必ず抜ける
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: yosou
+  cancel-in-progress: false
+
+jobs:
+  yosou:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install numpy lightgbm requests beautifulsoup4
+      - name: 予想と通知(2分半おきに3回。9分で打ち切り)
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          END=$(( $(date +%s) + 540 ))
+          for i in 1 2 3; do
+            python yosou.py --budget 180 || echo "  (この回は失敗。次にまわします)"
+            [ "$(date +%s)" -ge "$END" ] && break
+            [ $i -lt 3 ] && sleep 150
+          done
+          exit 0
+      - name: 通知済みとキャッシュを残す
+        if: always()
+        run: |
+          git config user.name  github-actions
+          git config user.email github-actions@github.com
+          git add -A state cache 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "state: $(date -u +%Y%m%d-%H%M)"
+          git pull --rebase --autostash || true
+          git push || echo "push できませんでした(次回に持ち越し)"

@@ -1,0 +1,36 @@
+name: prefetch
+# 当日ぶんの出走表を朝のうちに取って cache に入れておく。
+# info.kyotei.fun は Actions から時々まったく届かないので、
+# 締切直前の短い窓でそれに当たらないようにする保険。
+# 3時間おきに回して、取れなかったぶんを埋めていく。
+on:
+  schedule:
+    - cron: "0 22,1,4 * * *"      # JST 7時 / 10時 / 13時
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prefetch
+  cancel-in-progress: false
+
+jobs:
+  prefetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install numpy requests beautifulsoup4
+      - run: python prefetch.py || true
+      - name: cache を残す
+        run: |
+          git config user.name  github-actions
+          git config user.email github-actions@github.com
+          git add -A cache 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "prefetch: $(date -u +%Y%m%d-%H%M)"
+          git pull --rebase --autostash || true
+          git push || echo "push できませんでした(次回に持ち越し)"
