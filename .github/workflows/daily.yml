@@ -1,0 +1,24 @@
+name: daily
+# 1日の終わりに、その日の集計を必ず通知する。
+# ★買い目ゼロは正常な状態でもあるので、通知が来ないだけでは
+#   「今日は無かった」のか「壊れている」のか区別できない。
+#   実際、オッズの解析が壊れて3日間ゼロだったのに気づけなかった。
+on:
+  schedule:
+    - cron: "30 12 * * *"      # UTC 12:30 = JST 21:30（最終レース後）
+  workflow_dispatch:
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests
+      - name: 今日の集計を通知
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python daily.py
