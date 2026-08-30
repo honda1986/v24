@@ -33,7 +33,8 @@ jobs:
         run: |
           git config user.name  github-actions
           git config user.email github-actions@github.com
-          git add motor/latest.json history.json 2>/dev/null || true
+          git add motor/latest.json || true
+          [ -f history.json ] && git add history.json || true
           git diff --cached --quiet || git commit -m "motor+settle: $(date -u +%Y%m%d)"
           git pull --rebase --autostash || true
           git push
