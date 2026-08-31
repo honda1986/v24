@@ -1,16 +1,19 @@
 name: yosou
-# 10分ごとに動き、ネット締切まで 4〜30分 のレースだけ処理する。
+# ★GitHub の定期実行は当てにならない。
+#   "*/10" と書いても混雑時は間引かれ、実測で 06:22→08:39→10:36→16:36 と
+#   2〜6時間空いた。10分ごとという前提が成り立たない。
 #
-# ★ GitHub Actions の schedule は遅延する(メモ §6)。
-#   1回のジョブの中で3回まわして、10分の穴を埋めている。
-#   通知済みは state/ に残すので、二重に飛ぶことはない。
+#   なので「何回起動するか」ではなく「1回をどれだけ長く回すか」に変えた。
+#   1日4回だけ起動し、そのジョブの中で3分おきに回し続ける。
+#   起動が多少遅れても、走り出せばその日の残りを拾える。
 #
-# ★ ジョブ上限に当たると、通知済みの記録ごと丸ごと捨てられる(実測)。
-#   ・yosou.py に持ち時間(--budget)を持たせ、超えたら次の回に回す
-#   ・ループ全体にも締切を置き、上限の手前で必ず抜ける
+#   公開リポジトリなので Actions の実行時間に上限は無い。
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "0 23 * * *"      # JST 08:00
+    - cron: "0 2 * * *"       # JST 11:00
+    - cron: "0 5 * * *"       # JST 14:00
+    - cron: "0 8 * * *"       # JST 17:00
   workflow_dispatch:
 
 permissions:
@@ -23,32 +26,39 @@ concurrency:
 jobs:
   yosou:
     runs-on: ubuntu-latest
-    timeout-minutes: 14
+    timeout-minutes: 200
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - run: pip install numpy lightgbm requests beautifulsoup4
-      - name: 予想と通知(2分半おきに3回。9分で打ち切り)
+      - name: 3分おきに回し続ける（最終レースまで）
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |
-          END=$(( $(date +%s) + 540 ))
-          for i in 1 2 3; do
-            python yosou.py --budget 180 || echo "  (この回は失敗。次にまわします)"
-            [ "$(date +%s)" -ge "$END" ] && break
-            [ $i -lt 3 ] && sleep 150
-          done
-          exit 0
-      - name: 通知済みとキャッシュを残す
-        if: always()
-        run: |
           git config user.name  github-actions
           git config user.email github-actions@github.com
-          for p in state cache history.json; do
-            [ -e "$p" ] && git add -A "$p"
+          # 終わりは「185分後」か「日本時間20:50」の早いほう
+          END=$(( $(date +%s) + 11100 ))
+          LAST=$(TZ=Asia/Tokyo date -d "today 20:50" +%s 2>/dev/null || echo 0)
+          [ "$LAST" -gt 0 ] && [ "$LAST" -lt "$END" ] && END=$LAST
+          echo "JST $(TZ=Asia/Tokyo date +%H:%M) に開始。$(TZ=Asia/Tokyo date -d @$END +%H:%M) まで回します"
+          i=0
+          while [ "$(date +%s)" -lt "$END" ]; do
+            i=$((i+1))
+            echo "--- $i 回目  JST $(TZ=Asia/Tokyo date +%H:%M) ---"
+            python yosou.py --budget 150 || echo "  (この回は失敗。次にまわします)"
+            # ★1周ごとに記録を残す。まとめて最後だと落ちた回が消える
+            for p in state cache history.json; do
+              [ -e "$p" ] && git add -A "$p"
+            done
+            if ! git diff --cached --quiet; then
+              git commit -q -m "state: $(TZ=Asia/Tokyo date +%H%M)"
+              git pull --rebase --autostash -q || true
+              git push -q || echo "  push できず(次周に持ち越し)"
+            fi
+            sleep 180
           done
-          git diff --cached --quiet || git commit -m "state: $(date -u +%Y%m%d-%H%M)"
-          git pull --rebase --autostash || true
-          git push || echo "push できませんでした(次回に持ち越し)"
+          echo "$i 回まわしました"
+          exit 0
