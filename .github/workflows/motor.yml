@@ -26,15 +26,21 @@ jobs:
           path: v22src
           sparse-checkout: kfile
       - name: モーター純度を作る
-        run: python motor.py --kfile v22src/kfile --days 400 --out motor/latest.json
+        run: |
+          python motor.py --kfile v22src/kfile --days 400 --out motor/latest.json
+          python -c "import json,sys; j=json.load(open('motor/latest.json')); n=len(j.get('values') or {}); print('モーター純度', j.get('date'), n, '人'); sys.exit(0 if n>=500 else 1)"
       - name: 買った記録に結果を入れる（予想サイト用）
         run: python settle.py --kfile v22src/kfile || true
       - name: commit
         run: |
           git config user.name  github-actions
           git config user.email github-actions@github.com
-          git add motor/latest.json || true
-          [ -f history.json ] && git add history.json || true
+          # ★git add は指定したパスが1つでも無いと、あるほうも含めて
+          #   何もステージしない。まとめて渡してはいけない（実際に踏んだ）。
+          for p in motor/latest.json history.json; do
+            [ -e "$p" ] && git add "$p"
+          done
+          git status --short
           git diff --cached --quiet || git commit -m "motor+settle: $(date -u +%Y%m%d)"
           git pull --rebase --autostash || true
           git push

@@ -45,6 +45,9 @@ def main():
     skipped = (day or {}).get("skipped") or {}
     looked = len(picks) + sum(skipped.values())
     lack = skipped.get("データ欠", 0)
+    runs = (day or {}).get("runs", 0)
+    last = (day or {}).get("last_run", "—")
+    hour = datetime.now(JST).hour
 
     # 直近3日、買い目が出たか
     recent = []
@@ -54,17 +57,22 @@ def main():
 
     lines = [f"買い目 {len(picks)}レース "
              f"{sum(len(p['buys']) for p in picks)}点",
-             f"見たレース {looked}"]
+             f"見たレース {looked}",
+             f"実行 {runs}回（最後 {last}）"]
     for k, v in sorted(skipped.items(), key=lambda z: -z[1]):
         lines.append(f"  {k} {v}")
 
     # 異常の判定。「静かなだけ」と「壊れている」を分ける
     alarm = []
-    if looked == 0:
-        alarm.append("1レースも見ていない。ワークフローが動いていない")
+    early = hour < 20      # レースが終わる前に手で回した場合
+    if runs == 0:
+        alarm.append("yosou が1回も動いていない。ワークフローを確認すること")
+    elif looked == 0 and not early:
+        alarm.append(f"{runs}回動いたが、対象レースが1つも無かった。"
+                     "締切時刻が取れていない可能性")
     elif lack and lack / max(looked, 1) > 0.3:
         alarm.append(f"データが取れないレースが{lack/looked*100:.0f}%。取得元が不調")
-    if len(picks) == 0 and sum(recent) == 0 and looked:
+    if len(picks) == 0 and sum(recent) == 0 and looked and not early:
         alarm.append("3日続けて買い目ゼロ。検証値では0.0016%しか起きない")
 
     title = (f"v24 {date[4:6]}/{date[6:8]} 今日の集計"
@@ -75,6 +83,8 @@ def main():
     else:
         body += (f"\n\n検証値は1日{EXPECT_RACES}レース。"
                  f"直近3日 {recent[2]}/{recent[1]}/{recent[0]}レース")
+    if early:
+        body += "\n(まだレース中の時間帯です。定期実行は21:30)"
 
     print(title)
     print(body)

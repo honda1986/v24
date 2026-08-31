@@ -46,7 +46,9 @@ jobs:
         run: |
           git config user.name  github-actions
           git config user.email github-actions@github.com
-          git add -A state cache 2>/dev/null || true
+          for p in state cache history.json; do
+            [ -e "$p" ] && git add -A "$p"
+          done
           git diff --cached --quiet || git commit -m "state: $(date -u +%Y%m%d-%H%M)"
           git pull --rebase --autostash || true
           git push || echo "push できませんでした(次回に持ち越し)"

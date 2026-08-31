@@ -74,6 +74,50 @@ h2{font-size:13px;margin:0 0 10px;color:var(--accent);font-weight:900;
 .meta{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:7px;
       display:flex;gap:10px;flex-wrap:wrap}
 
+/* 6艇の内訳 */
+details.det{margin-top:8px}
+details.det>summary{font-size:11px;color:var(--blue);cursor:pointer;
+      list-style:none;padding:3px 0;user-select:none}
+details.det>summary::-webkit-details-marker{display:none}
+details.det>summary::before{content:"▸ ";font-size:9px}
+details.det[open]>summary::before{content:"▾ "}
+details.det>summary:focus-visible{outline:1px solid var(--blue);outline-offset:2px}
+.tw{overflow-x:auto;margin-top:6px}
+table.lanes{border-collapse:collapse;font-family:var(--mono);font-size:11px;
+      font-variant-numeric:tabular-nums;white-space:nowrap;min-width:100%}
+table.lanes th{font-size:9px;color:var(--dim);font-weight:600;text-align:right;
+      padding:3px 6px;border-bottom:1px solid var(--line);letter-spacing:.03em}
+table.lanes th:nth-child(-n+2){text-align:left}
+table.lanes td{padding:4px 6px;border-bottom:1px solid rgba(38,54,59,.5)}
+table.lanes td:nth-child(n+3){text-align:right}
+table.lanes tr:last-child td{border-bottom:none}
+.ln{display:inline-block;width:17px;height:17px;line-height:17px;text-align:center;
+      border-radius:4px;font-weight:800;font-size:10px;color:#0B1113}
+.ln1{background:#EAF2EF}.ln2{background:#5AA9E6}.ln3{background:#E4726B}
+.ln4{background:#5FC08B}.ln5{background:#F2C230}.ln6{background:#B58BD6}
+.nm{font-family:var(--sans);font-size:11px;color:var(--ink)}
+.pq-up{color:var(--good)}.pq-dn{color:var(--dim)}
+.fw{color:var(--accent)}
+
+/* 全レース */
+.allraces{margin-top:10px}
+.allraces>summary{font-size:11px;color:var(--blue);cursor:pointer;list-style:none;
+      padding:4px 0;user-select:none}
+.allraces>summary::-webkit-details-marker{display:none}
+.allraces>summary::before{content:"▸ ";font-size:9px}
+.allraces[open]>summary::before{content:"▾ "}
+.rrow{border:1px solid var(--line);border-radius:8px;padding:7px 10px;
+      margin-bottom:5px;background:#0C1416}
+.rrow.buy{border-color:rgba(242,194,48,.45)}
+.rtop{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+.rtop .st{font-family:var(--mono);font-size:9.5px;padding:1px 6px;border-radius:5px;
+      border:1px solid var(--line);color:var(--sub)}
+.rtop .st.buy{border-color:var(--accent);color:var(--accent)}
+.rtop .st.none{border-color:var(--line);color:var(--dim)}
+.rtop .st.cut{border-color:rgba(90,169,230,.4);color:var(--blue)}
+.rtop .st.err{border-color:rgba(228,114,107,.4);color:var(--bad)}
+.rtop .w{font-family:var(--mono);font-size:10px;color:var(--dim);margin-left:auto}
+
 /* 見送りの内訳 */
 .skips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .skip{font-size:10px;color:var(--sub);border:1px solid var(--line);
@@ -251,8 +295,11 @@ function render(data){
       m.appendChild(el("span", null, `${(p.buys||[]).length}点 ${yen(p.cost||0)}`));
       if(p.combo) m.appendChild(el("span", null, `結果 ${p.combo}  払戻 ${yen(p.pay||0)}`));
       r.appendChild(m);
+      if(p.lanes && p.lanes.length) r.appendChild(laneTable(p));
       sec.appendChild(r);
     }
+
+    if(d.races && d.races.length) sec.appendChild(allRaces(d));
 
     if(d.skipped && Object.keys(d.skipped).length){
       const sk = el("div","skips");
@@ -272,6 +319,97 @@ function render(data){
 
   document.getElementById("foot").textContent =
     "更新 " + (data.updated ? data.updated.replace("T"," ").slice(0,16) : "—");
+}
+
+const num = (v, d, suf) => (v === null || v === undefined)
+  ? "—" : Number(v).toFixed(d) + (suf || "");
+
+function laneTable(p){
+  const d = el("details","det");
+  d.appendChild(el("summary", null, "6艇の内訳"));
+  const wrap = el("div","tw");
+  const t = el("table","lanes");
+  const head = el("tr");
+  for(const h of ["枠","選手","モデル","市場","p/q","級","全国","モ2連",
+                  "展示","平均ST","得点","モ純度"]){
+    head.appendChild(el("th", null, h));
+  }
+  t.appendChild(head);
+  for(const x of p.lanes){
+    const tr = el("tr");
+    const c1 = el("td");
+    const b = el("span", "ln ln" + x.lane, String(x.lane));
+    c1.appendChild(b);
+    tr.appendChild(c1);
+    const c2 = el("td");
+    const nm = el("span","nm", x.name || "—");
+    c2.appendChild(nm);
+    if(x.f) {
+      const f = el("span","fw", ` F${x.f}`);
+      c2.appendChild(f);
+    }
+    tr.appendChild(c2);
+    // ★決め手になる3つを先に置く。右にはみ出すと見られない
+    tr.appendChild(el("td", null, x.p == null ? "—"
+      : (x.p * 100).toFixed(1) + "%"));
+    tr.appendChild(el("td", null, x.q == null ? "—"
+      : (x.q * 100).toFixed(1) + "%"));
+    const ratio = (x.p != null && x.q) ? x.p / x.q : null;
+    tr.appendChild(el("td", ratio == null ? null : (ratio >= 1 ? "pq-up" : "pq-dn"),
+                     ratio == null ? "—" : ratio.toFixed(2)));
+    tr.appendChild(el("td", null, ({4:"A1",3:"A2",2:"B1",1:"B2"})[x.cls] || "—"));
+    tr.appendChild(el("td", null, num(x.n_win, 2)));
+    tr.appendChild(el("td", null, x.m_2ren == null ? "—"
+      : (x.m_2ren * 100).toFixed(0) + "%"));
+    tr.appendChild(el("td", null, num(x.tenji, 2)));
+    tr.appendChild(el("td", null, num(x.st, 2)));
+    tr.appendChild(el("td", null, num(x.tok, 1)));
+    tr.appendChild(el("td", null, x.mot == null ? "—"
+      : (x.mot > 0 ? "+" : "") + Number(x.mot).toFixed(3)));
+    t.appendChild(tr);
+  }
+  wrap.appendChild(t);
+  d.appendChild(wrap);
+  const note = el("p","note");
+  note.style.marginTop = "6px";
+  note.textContent = "モデル＝1着確率の予想、市場＝オッズが織り込んだ1着確率。"
+    + "p/q が1より大きい艇を、市場より強いと見ています。";
+  d.appendChild(note);
+  return d;
+}
+
+// 見たレースを全部並べる。買い目が出なかったものも含む。
+// ★波・風で切ったレースはオッズを取っていないので内訳が無い。
+//   全レースでモデルを回すには全レースのオッズが要り、10分に収まらない。
+const ST_CLASS = {"買い":"buy", "買い目なし":"none", "波・風":"cut"};
+
+function allRaces(d){
+  const det = el("details","allraces");
+  const n = d.races.length;
+  const withDetail = d.races.filter(r => r.lanes && r.lanes.length).length;
+  det.appendChild(el("summary", null,
+    `この日に見た全${n}レース（うち内訳あり ${withDetail}）`));
+  for(const r of d.races){
+    const row = el("div","rrow" + (r.status === "買い" ? " buy" : ""));
+    const top = el("div","rtop");
+    top.appendChild(el("span","place", r.place || r.jcd));
+    top.appendChild(el("span","rno", `${r.rno}R`));
+    top.appendChild(el("span","rno", r.close || "—"));
+    top.appendChild(el("span", "st " + (ST_CLASS[r.status] || "err"),
+      r.status === "買い" ? `買い ${r.npt}点` : r.status));
+    if(r.wave !== null && r.wave !== undefined)
+      top.appendChild(el("span","w", `波${r.wave}cm 風${r.wind}m`));
+    row.appendChild(top);
+    if(r.lanes && r.lanes.length) row.appendChild(laneTable(r));
+    row.appendChild(el("div"));
+    det.appendChild(row);
+  }
+  const note = el("p","note");
+  note.style.marginTop = "6px";
+  note.textContent = "波・風で切ったレースにはオッズを取っていないので内訳がありません"
+    + "（全レースぶん取ると10分の実行時間に収まらないため）。";
+  det.appendChild(note);
+  return det;
 }
 
 function fail(msg){

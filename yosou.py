@@ -161,7 +161,8 @@ def card(date, jcd):
     return page
 
 
-def site_log(date, place, jcd, rno, close, buys, cp, q, odds, wave, wind, skipped):
+def site_log(date, place, jcd, rno, close, buys, cp, q, odds, wave, wind, skipped,
+             lanes=None, p1=None, q1=None):
     """index.html が読む history.json に、この回の結果を足す。
 
     ★1レース通知するたびに書いて commit する。まとめて最後に書くと、
@@ -188,7 +189,93 @@ def site_log(date, place, jcd, rno, close, buys, cp, q, odds, wave, wind, skippe
                           "odds": round(float(odds[i]), 1)} for i in buys],
                 "cost": len(buys) * BET_YEN,
                 "combo": None, "pay": None, "hit": None, "ret": None,
+                # 6艇の内訳。予想サイトで開いて中身を見るため
+                "lanes": [{
+                    "lane": x["lane"],
+                    "name": x.get("name") or "",
+                    "cls": x.get("cls_val"),
+                    "n_win": x.get("n_win"),
+                    "m_2ren": x.get("m_2ren"),
+                    "tenji": x.get("tenji"),
+                    "f": x.get("f_count"),
+                    "st": x.get("avg_st"),
+                    "tok": x.get("tok"),
+                    "mot": (None if x.get("mot_pure") is None
+                            else round(float(x["mot_pure"]), 4)),
+                    "p": round(float(p1[i]), 4) if p1 is not None else None,
+                    "q": round(float(q1[i]), 4) if q1 is not None else None,
+                } for i, x in enumerate(sorted(lanes or [],
+                                              key=lambda z: z["lane"]))],
             })
+    h["days"] = sorted(days, key=lambda d: d["date"])
+    h["updated"] = datetime.now(OF.JST).isoformat(timespec="seconds")
+    _save(SITE, h)
+
+
+KEEP_DETAIL_DAYS = 14      # 全レースの内訳を残す日数（履歴が膨らむので）
+
+
+def site_race(date, place, jcd, rno, close, status, wave, wind,
+              lanes=None, p1=None, q1=None, npt=0):
+    """見たレースを全部残す（買い目が出なかったものも）。
+
+    ★波・風で切ったレースはオッズを取っていないので、モデルの確率が無い。
+      その場合は理由と気象だけ。これは仕組み上の限界で、全レースで
+      モデルを回すには全レースのオッズが要り、10分に収まらない。
+    """
+    h = _load(SITE, {}) or {}
+    days = h.get("days") or []
+    day = next((d for d in days if d["date"] == date), None)
+    if day is None:
+        day = {"date": date, "picks": [], "skipped": {}}
+        days.append(day)
+    races = day.setdefault("races", [])
+    rec = {"jcd": jcd, "place": place, "rno": rno, "close": close,
+           "status": status,
+           "wave": None if wave is None else round(float(wave)),
+           "wind": None if wind is None else round(float(wind)),
+           "npt": npt}
+    if lanes and p1 is not None and q1 is not None:
+        rec["lanes"] = [{
+            "lane": x["lane"], "name": x.get("name") or "",
+            "cls": x.get("cls_val"), "n_win": x.get("n_win"),
+            "m_2ren": x.get("m_2ren"), "tenji": x.get("tenji"),
+            "f": x.get("f_count"), "st": x.get("avg_st"), "tok": x.get("tok"),
+            "mot": (None if x.get("mot_pure") is None
+                    else round(float(x["mot_pure"]), 4)),
+            "p": round(float(p1[i]), 4), "q": round(float(q1[i]), 4),
+        } for i, x in enumerate(sorted(lanes, key=lambda z: z["lane"]))]
+    races[:] = [r for r in races if not (r["jcd"] == jcd and r["rno"] == rno)]
+    races.append(rec)
+    races.sort(key=lambda r: (r.get("close") or "", r["jcd"]))
+
+    # 古い日の内訳は落とす（履歴が膨らむ）
+    keep = sorted({d["date"] for d in days})[-KEEP_DETAIL_DAYS:]
+    for d in days:
+        if d["date"] not in keep:
+            for r in d.get("races") or []:
+                r.pop("lanes", None)
+
+    h["days"] = sorted(days, key=lambda d: d["date"])
+    h["updated"] = datetime.now(OF.JST).isoformat(timespec="seconds")
+    _save(SITE, h)
+
+
+def site_run(date):
+    """この回が動いたことを history.json に残す（心拍）。
+
+    ★対象レースが無い回は何も書かずに戻っていたので、
+      「動いていない」のか「動いたが対象が無かった」のか区別できなかった。
+      daily.py の誤報の原因。
+    """
+    h = _load(SITE, {}) or {}
+    days = h.get("days") or []
+    day = next((d for d in days if d["date"] == date), None)
+    if day is None:
+        day = {"date": date, "picks": [], "skipped": {}}
+        days.append(day)
+    day["runs"] = day.get("runs", 0) + 1
+    day["last_run"] = datetime.now(OF.JST).strftime("%H:%M")
     h["days"] = sorted(days, key=lambda d: d["date"])
     h["updated"] = datetime.now(OF.JST).isoformat(timespec="seconds")
     _save(SITE, h)
@@ -314,6 +401,9 @@ def main():
     # --dry では通知済みを見ない(同じ日に何度でも同じ結果が出せるように)
     done = set() if args.dry else set(_load(st_path, []) or [])
 
+    if not args.dry:
+        site_run(date)          # ここまで来たら「動いた」と記録する
+
     # 1. 淡水は最初から見ない
     targets = [j for j in VENUE if j not in SR.TANSUI]
     print(f"対象の場 {len(targets)}場 (淡水{len(SR.TANSUI)}場は除外)")
@@ -359,21 +449,31 @@ def main():
         if not SR.race_ok(jcd, wave, wind):
             print(f"  {tag} 見送り  波{wave} 風{wind}")
             skip("波・風" if wave is not None else "データ欠")
+            if not args.dry:
+                site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net,
+                          "波・風" if wave is not None else "気象が取れない",
+                          wave, wind)
             continue
         pg = card(date, jcd)
         if not pg:
             print(f"  {tag} 今節成績が取れません")
             skip("データ欠")
+            if not args.dry:
+                site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "今節成績が取れません", wave, wind)
             continue
         rc = racecard(date, jcd, rno)
         if not rc:
             print(f"  {tag} 出走表が取れません")
             skip("データ欠")
+            if not args.dry:
+                site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "出走表が取れません", wave, wind)
             continue
         got = build_lanes(rc, pg, jcd, rno, motor)
         if not got:
             print(f"  {tag} 出走表の形が違います")
             skip("データ欠")
+            if not args.dry:
+                site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "出走表の形が違います", wave, wind)
             continue
         lanes, meta = got
         # 展示タイムは出走表側を優先し、無ければ直前情報で補う
@@ -383,10 +483,15 @@ def main():
         if sum(1 for x in lanes if x.get("tenji")) < 6:
             print(f"  {tag} 展示タイムがまだ出ていません")
             skip("データ欠")
+            if not args.dry:
+                site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "展示タイムがまだ出ていません", wave, wind)
             continue
         if sum(1 for x in lanes if x.get("mot_pure") is not None) < 3:
             print(f"  {tag} モーター純度が3艇未満(節初日?)。見送り")
             skip("データ欠")
+            if not args.dry:
+                site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "モーター純度が足りない",
+                          wave, wind)
             continue
         # 4. オッズ
         if time.time() - t0 > args.budget + 60:
@@ -397,6 +502,8 @@ def main():
         if q is None:
             print(f"  {tag} オッズが取れません")
             skip("データ欠")
+            if not args.dry:
+                site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "オッズが取れません", wave, wind)
             continue
         X = F.build_race(lanes, meta, q1)
         raw = np.asarray(model.predict(X), dtype=float)
@@ -406,6 +513,9 @@ def main():
         if not buy:
             print(f"  {tag} 買い目なし  波{wave:.0f}cm 風{wind:.0f}m")
             skip("帯の外／p/q不足")
+            if not args.dry:
+                site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "買い目なし",
+                          wave, wind, lanes, p1, q1)
             continue
         print(f"  {tag} ★{len(buy)}点  波{wave:.0f}cm 風{wind:.0f}m  "
               + " ".join(f"{F.COMBOS[i]}(p/q {cp[i]/q[i]:.2f})" for i in buy))
@@ -414,7 +524,10 @@ def main():
         if notify(topic, jcd, rno, net, buy, cp, q, wave, wind):
             done.add(f"{jcd}-{rno}")
             site_log(date, VENUE.get(jcd, str(jcd)), jcd, rno, net,
-                     buy, cp, q, odds, wave, wind, None)
+                     buy, cp, q, odds, wave, wind, None,
+                     lanes=lanes, p1=p1, q1=q1)
+            site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "買い",
+                      wave, wind, lanes, p1, q1, npt=len(buy))
             _save(st_path, sorted(done))   # ★1件ごとに残す。まとめて最後に
             bought += 1                    #   書くと、途中で落ちた回のぶんが
                                            #   記録されず二重通知になる
