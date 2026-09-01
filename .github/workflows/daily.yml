@@ -5,7 +5,7 @@ name: daily
 #   実際、オッズの解析が壊れて3日間ゼロだったのに気づけなかった。
 on:
   schedule:
-    - cron: "30 12 * * *"      # UTC 12:30 = JST 21:30（最終レース後）
+    - cron: "50 14 * * *"      # UTC 14:50 = JST 23:50（ミッドナイトの後）
   workflow_dispatch:
 
 jobs:

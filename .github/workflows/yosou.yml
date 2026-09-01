@@ -14,6 +14,7 @@ on:
     - cron: "0 2 * * *"       # JST 11:00
     - cron: "0 5 * * *"       # JST 14:00
     - cron: "0 8 * * *"       # JST 17:00
+    - cron: "0 11 * * *"      # JST 20:00（ミッドナイトの後半）
   workflow_dispatch:
 
 permissions:
@@ -39,9 +40,11 @@ jobs:
         run: |
           git config user.name  github-actions
           git config user.email github-actions@github.com
-          # 終わりは「185分後」か「日本時間20:50」の早いほう
+          # 終わりは「185分後」か「日本時間23:59」の早いほう。
+          # ★ミッドナイトは23時台まで走る（若松・大村・丸亀は海水場＝対象）。
+          #   20:50 で切ると後半を丸ごと落とす。
           END=$(( $(date +%s) + 11100 ))
-          LAST=$(TZ=Asia/Tokyo date -d "today 20:50" +%s 2>/dev/null || echo 0)
+          LAST=$(TZ=Asia/Tokyo date -d "today 23:59" +%s 2>/dev/null || echo 0)
           [ "$LAST" -gt 0 ] && [ "$LAST" -lt "$END" ] && END=$LAST
           echo "JST $(TZ=Asia/Tokyo date +%H:%M) に開始。$(TZ=Asia/Tokyo date -d @$END +%H:%M) まで回します"
           i=0

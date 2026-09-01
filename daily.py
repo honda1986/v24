@@ -64,7 +64,8 @@ def main():
 
     # 異常の判定。「静かなだけ」と「壊れている」を分ける
     alarm = []
-    early = hour < 20      # レースが終わる前に手で回した場合
+    # ★ミッドナイトは23時台まで走るので、それ以前は「まだ途中」とみなす
+    early = hour < 23      # レースが終わる前に手で回した場合
     if runs == 0:
         alarm.append("yosou が1回も動いていない。ワークフローを確認すること")
     elif looked == 0 and not early:
@@ -84,7 +85,7 @@ def main():
         body += (f"\n\n検証値は1日{EXPECT_RACES}レース。"
                  f"直近3日 {recent[2]}/{recent[1]}/{recent[0]}レース")
     if early:
-        body += "\n(まだレース中の時間帯です。定期実行は21:30)"
+        body += "\n(まだレース中の時間帯です。定期実行は23:50)"
 
     print(title)
     print(body)
