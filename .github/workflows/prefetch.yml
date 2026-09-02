@@ -30,9 +30,20 @@ jobs:
         run: |
           git config user.name  github-actions
           git config user.email github-actions@github.com
+          BR="${GITHUB_REF_NAME:-main}"
+          # ★rebase が止まると HEAD が枝から外れ、以後 push できなくなる（§18）
+          if ! git symbolic-ref -q HEAD >/dev/null; then
+            git rebase --quit >/dev/null 2>&1 || true
+            git checkout -q -B "$BR"
+          fi
           for p in cache; do
             [ -e "$p" ] && git add -A "$p"
           done
           git diff --cached --quiet || git commit -m "prefetch: $(date -u +%Y%m%d-%H%M)"
-          git pull --rebase --autostash || true
-          git push || echo "push できませんでした(次回に持ち越し)"
+          git fetch -q origin "$BR" || true
+          git rebase -q "origin/$BR" || {
+            echo "★衝突。こちらを優先します"
+            git rebase --abort >/dev/null 2>&1 || true
+            git rebase -q -X theirs "origin/$BR" || git rebase --abort || true
+          }
+          git push origin "HEAD:$BR" || echo "push できませんでした(次回に持ち越し)"

@@ -35,6 +35,12 @@ jobs:
         run: |
           git config user.name  github-actions
           git config user.email github-actions@github.com
+          BR="${GITHUB_REF_NAME:-main}"
+          # ★rebase が止まると HEAD が枝から外れ、以後 push できなくなる（§18）
+          if ! git symbolic-ref -q HEAD >/dev/null; then
+            git rebase --quit >/dev/null 2>&1 || true
+            git checkout -q -B "$BR"
+          fi
           # ★git add は指定したパスが1つでも無いと、あるほうも含めて
           #   何もステージしない。まとめて渡してはいけない（実際に踏んだ）。
           for p in motor/latest.json history.json; do
@@ -42,5 +48,10 @@ jobs:
           done
           git status --short
           git diff --cached --quiet || git commit -m "motor+settle: $(date -u +%Y%m%d)"
-          git pull --rebase --autostash || true
-          git push
+          git fetch -q origin "$BR" || true
+          git rebase -q "origin/$BR" || {
+            echo "★衝突。こちらを優先します"
+            git rebase --abort >/dev/null 2>&1 || true
+            git rebase -q -X theirs "origin/$BR" || git rebase --abort || true
+          }
+          git push origin "HEAD:$BR"

@@ -40,6 +40,33 @@ jobs:
         run: |
           git config user.name  github-actions
           git config user.email github-actions@github.com
+          BR="${GITHUB_REF_NAME:-main}"
+
+          # ★rebase が衝突で止まると HEAD が枝から外れる。そうなると以後ずっと
+          #   「You are not currently on a branch」で push できず、通知だけ出て
+          #   記録がどこにも残らない状態が続く（実測 2026-09-02、丸一日ぶん喪失）。
+          #   毎周かならず立て直してから積む。
+          save() {
+            if ! git symbolic-ref -q HEAD >/dev/null; then
+              echo "  ★枝から外れています。いまの記録ごと $BR に付け直します"
+              git rebase --quit >/dev/null 2>&1 || true   # 途中の rebase だけ解除
+              git checkout -q -B "$BR"                    # commit は残る
+            fi
+            for p in state cache history.json; do
+              [ -e "$p" ] && git add -A "$p"
+            done
+            git diff --cached --quiet && return 0
+            git commit -q -m "state: $(TZ=Asia/Tokyo date +%H%M)"
+            git fetch -q origin "$BR" || true
+            if ! git rebase -q "origin/$BR"; then
+              echo "  ★取り込みで衝突。こちらの記録を優先します"
+              git rebase --abort >/dev/null 2>&1 || true
+              git rebase -q -X theirs "origin/$BR" \
+                || git rebase --abort >/dev/null 2>&1 || true
+            fi
+            # ★枝名を明示する。detached でも通る書き方にしておく
+            git push -q origin "HEAD:$BR" || echo "  push できず(次周に持ち越し)"
+          }
           # 終わりは「185分後」か「日本時間23:59」の早いほう。
           # ★ミッドナイトは23時台まで走る（若松・大村・丸亀は海水場＝対象）。
           #   20:50 で切ると後半を丸ごと落とす。
@@ -53,14 +80,7 @@ jobs:
             echo "--- $i 回目  JST $(TZ=Asia/Tokyo date +%H:%M) ---"
             python yosou.py --budget 150 || echo "  (この回は失敗。次にまわします)"
             # ★1周ごとに記録を残す。まとめて最後だと落ちた回が消える
-            for p in state cache history.json; do
-              [ -e "$p" ] && git add -A "$p"
-            done
-            if ! git diff --cached --quiet; then
-              git commit -q -m "state: $(TZ=Asia/Tokyo date +%H%M)"
-              git pull --rebase --autostash -q || true
-              git push -q || echo "  push できず(次周に持ち越し)"
-            fi
+            save
             sleep 180
           done
           echo "$i 回まわしました"

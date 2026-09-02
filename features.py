@@ -28,6 +28,8 @@ IN = [f"{c}_in" for c in _INCOLS]
 # 展示タイム(直前情報)
 TENJI = ["tenji", "tenji_dev", "tenji_rk"]
 # Kファイル由来(motor.py が作る)
+# ★st_pure(Kファイル由来のST純度)を足して試したが、本番の学習器では
+#   対数損失が改善しなかったので入れていない。経緯はメモ §17。
 PURE = ["mot_pure"]
 
 FEATS = MARKET + CARD + SETSU + META + DEV + RK + IN + TENJI + PURE
