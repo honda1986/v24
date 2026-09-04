@@ -42,29 +42,35 @@ jobs:
           git config user.email github-actions@github.com
           BR="${GITHUB_REF_NAME:-main}"
 
-          # ★rebase が衝突で止まると HEAD が枝から外れる。そうなると以後ずっと
-          #   「You are not currently on a branch」で push できず、通知だけ出て
-          #   記録がどこにも残らない状態が続く（実測 2026-09-02、丸一日ぶん喪失）。
-          #   毎周かならず立て直してから積む。
+          # ★git に JSON を混ぜさせない（2026-09-04、メモ §26）。
+          #   history.json は yosou / settle / prefetch が別々に書く1行のJSON。
+          #   git から見れば毎回「同じ行の衝突」で、rebase では直せない。
+          #   -X theirs で片方を丸ごと採ると settle の的中・払戻が黙って消える。
+          #   なので毎周リモートの最新を取り直し、自分のぶんを意味を見て足す。
+          #   衝突は起きようがなくなる。
           save() {
-            if ! git symbolic-ref -q HEAD >/dev/null; then
-              echo "  ★枝から外れています。いまの記録ごと $BR に付け直します"
-              git rebase --quit >/dev/null 2>&1 || true   # 途中の rebase だけ解除
-              git checkout -q -B "$BR"                    # commit は残る
+            git fetch -q origin "$BR" || return 0
+            T=$(mktemp -d)
+            mkdir -p state cache
+            cp -a state "$T"/ 2>/dev/null || true
+            cp -a cache "$T"/ 2>/dev/null || true
+            cp -a history.json "$T"/ 2>/dev/null || true
+            git rebase --quit >/dev/null 2>&1 || true   # 途中のrebaseを解除
+            git checkout -q -B "$BR"
+            git reset -q --hard "origin/$BR"            # リモートに合わせる
+            mkdir -p state cache
+            cp -a "$T/state/." state/ 2>/dev/null || true
+            cp -a "$T/cache/." cache/ 2>/dev/null || true
+            if [ -f "$T/history.json" ]; then
+              python merge_history.py "$T/history.json" history.json || \
+                cp -a "$T/history.json" history.json
             fi
+            rm -rf "$T"
             for p in state cache history.json; do
               [ -e "$p" ] && git add -A "$p"
             done
             git diff --cached --quiet && return 0
             git commit -q -m "state: $(TZ=Asia/Tokyo date +%H%M)"
-            git fetch -q origin "$BR" || true
-            if ! git rebase -q "origin/$BR"; then
-              echo "  ★取り込みで衝突。こちらの記録を優先します"
-              git rebase --abort >/dev/null 2>&1 || true
-              git rebase -q -X theirs "origin/$BR" \
-                || git rebase --abort >/dev/null 2>&1 || true
-            fi
-            # ★枝名を明示する。detached でも通る書き方にしておく
             git push -q origin "HEAD:$BR" || echo "  push できず(次周に持ち越し)"
           }
           # 終わりは「185分後」か「日本時間23:59」の早いほう。
