@@ -19,18 +19,23 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install numpy
-      - name: v22 の Kファイルを取る
+      - name: v22 の Kファイルと確定オッズを取る
+        # raw は settle.py が「通知時オッズ → 確定オッズ」を測るのに使う。
+        # 手元に無ければ settle.py が raw.githubusercontent から1日ぶんだけ
+        # 取りに行くが、ここで置いておけばネットに頼らずに済む。
         uses: actions/checkout@v4
         with:
           repository: honda1986/v22
           path: v22src
-          sparse-checkout: kfile
+          sparse-checkout: |
+            kfile
+            raw
       - name: モーター純度を作る
         run: |
           python motor.py --kfile v22src/kfile --days 400 --out motor/latest.json
           python -c "import json,sys; j=json.load(open('motor/latest.json')); n=len(j.get('values') or {}); print('モーター純度', j.get('date'), n, '人'); sys.exit(0 if n>=500 else 1)"
-      - name: 買った記録に結果を入れる（予想サイト用）
-        run: python settle.py --kfile v22src/kfile || true
+      - name: 買った記録に結果とオッズの目減りを入れる（予想サイト用）
+        run: python settle.py --kfile v22src/kfile --raw v22src/raw || true
       - name: commit
         run: |
           git config user.name  github-actions

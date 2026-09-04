@@ -71,6 +71,10 @@ h2{font-size:13px;margin:0 0 10px;color:var(--accent);font-weight:900;
      border:1px solid var(--line);border-radius:6px;padding:3px 7px;background:#0C1416}
 .buy.won{border-color:var(--good);background:rgba(95,192,139,.14);color:var(--good)}
 .buy .pq{color:var(--accent);font-size:10px;margin-left:5px}
+/* 締切前オッズ → 確定オッズ の動き */
+.buy .mv{font-size:10px;margin-left:5px}
+.buy .mv.up{color:var(--good)}
+.buy .mv.dn{color:var(--bad)}
 .meta{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:7px;
       display:flex;gap:10px;flex-wrap:wrap}
 
@@ -91,10 +95,16 @@ table.lanes th:nth-child(-n+2){text-align:left}
 table.lanes td{padding:4px 6px;border-bottom:1px solid rgba(38,54,59,.5)}
 table.lanes td:nth-child(n+3){text-align:right}
 table.lanes tr:last-child td{border-bottom:none}
+/* 枠の色は実際のボートレースの艇色に合わせる。1白 2黒 3赤 4青 5黄 6緑 */
 .ln{display:inline-block;width:17px;height:17px;line-height:17px;text-align:center;
       border-radius:4px;font-weight:800;font-size:10px;color:#0B1113}
-.ln1{background:#EAF2EF}.ln2{background:#5AA9E6}.ln3{background:#E4726B}
-.ln4{background:#5FC08B}.ln5{background:#F2C230}.ln6{background:#B58BD6}
+.ln1{background:#FFFFFF;color:#0B1113}
+/* ★黒は暗い背景に埋もれるので、縁を1px入れて枠の存在を残す */
+.ln2{background:#141414;color:#FFFFFF;box-shadow:inset 0 0 0 1px #6C7A78}
+.ln3{background:#E23B32;color:#FFFFFF}
+.ln4{background:#2172D6;color:#FFFFFF}
+.ln5{background:#F5C518;color:#0B1113}
+.ln6{background:#17A05B;color:#FFFFFF}
 .nm{font-family:var(--sans);font-size:11px;color:var(--ink)}
 .pq-up{color:var(--good)}.pq-dn{color:var(--dim)}
 .fw{color:var(--accent)}
@@ -162,6 +172,7 @@ a{color:var(--blue)}
     <div><span class="lab">的中</span><span class="val" id="k-hit">—</span></div>
     <div><span class="lab">買った点</span><span class="val" id="k-pts">—</span></div>
     <div><span class="lab">収支</span><span class="val" id="k-pl">—</span></div>
+    <div><span class="lab">オッズ目減り</span><span class="val" id="k-mv">—</span></div>
   </div>
   <div class="gauge" id="gauge">
     <div class="fill" id="g-fill"></div>
@@ -176,7 +187,8 @@ a{color:var(--blue)}
   <h2>読むときの前提</h2>
   <p>バックテストの回収率は <b>95.3%</b>（学習に使っていない4,562組）。<b>100%は超えていません。</b></p>
   <p>しかもこれは<b>確定オッズ</b>で測った値です。実際は通知から投票までにオッズが動くので、ここより下がります。</p>
-  <p>この画面は、その差がどれだけかを測るためのものです。<b>2週間は買わずに記録だけ</b>取ってください。</p>
+  <p>その差が上の<b>「オッズ目減り」</b>です。通知したときのオッズを1として、締切後の確定オッズが平均どれだけ動いたか。マイナスなら、その分だけ 95.3% から引いて読んでください。</p>
+  <p><b>2週間は買わずに記録だけ</b>取ってください。</p>
 </section>
 
 <section class="card">
@@ -246,6 +258,20 @@ function render(data){
   pl.textContent = settled.length ? yen(ret - cost) : "—";
   pl.style.color = settled.length && ret >= cost ? "var(--good)" : "var(--bad)";
 
+  // 通知したときのオッズが、締切までにどれだけ動いたか。
+  // ★バックテスト95.3%は確定オッズで測った値。ここが実運用との差そのもの。
+  const mvs = picks.flatMap(p => (p.buys||[]).map(b => b.move).filter(x => x));
+  const mvEl = document.getElementById("k-mv");
+  if(mvs.length){
+    const avg = mvs.reduce((a,b)=>a+b,0) / mvs.length;
+    const d = (avg - 1) * 100;
+    mvEl.innerHTML = (d>=0?"+":"") + d.toFixed(1) + '<span class="u">%</span>';
+    mvEl.style.color = d >= 0 ? "var(--good)" : "var(--bad)";
+    mvEl.title = `買った ${mvs.length}組の平均。締切前に見たオッズを1とした確定オッズ`;
+  }else{
+    mvEl.textContent = "—";
+  }
+
   const box = document.getElementById("days");
   box.textContent = "";
   if(!days.length){
@@ -285,6 +311,12 @@ function render(data){
         e.appendChild(document.createTextNode(b.combo));
         const q = el("span","pq", `p/q ${Number(b.pq).toFixed(2)}`);
         e.appendChild(q);
+        if(b.move){
+          const d = (b.move - 1) * 100;
+          const mv = el("span", "mv " + (d >= 0 ? "up" : "dn"),
+            `${b.odds}→${b.fodds} (${d>=0?"+":""}${d.toFixed(0)}%)`);
+          e.appendChild(mv);
+        }
         bs.appendChild(e);
       }
       r.appendChild(bs);
@@ -293,6 +325,11 @@ function render(data){
       if(p.wave !== undefined && p.wave !== null)
         m.appendChild(el("span", null, `波 ${p.wave}cm  風 ${p.wind}m`));
       m.appendChild(el("span", null, `${(p.buys||[]).length}点 ${yen(p.cost||0)}`));
+      if(p.nmot !== undefined && p.nmot !== null && p.nmot < 3)
+        m.appendChild(el("span", null, `モーター純度 ${p.nmot}/6艇（節初日）`));
+      if(p.kept !== undefined && p.kept !== null)
+        m.appendChild(el("span", null,
+          `確定オッズでも条件を満たした ${p.kept}/${(p.buys||[]).length}点`));
       if(p.combo) m.appendChild(el("span", null, `結果 ${p.combo}  払戻 ${yen(p.pay||0)}`));
       r.appendChild(m);
       if(p.lanes && p.lanes.length) r.appendChild(laneTable(p));

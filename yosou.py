@@ -162,7 +162,7 @@ def card(date, jcd):
 
 
 def site_log(date, place, jcd, rno, close, buys, cp, q, odds, wave, wind, skipped,
-             lanes=None, p1=None, q1=None):
+             lanes=None, p1=None, q1=None, nmot=None):
     """index.html が読む history.json に、この回の結果を足す。
 
     ★1レース通知するたびに書いて commit する。まとめて最後に書くと、
@@ -187,7 +187,7 @@ def site_log(date, place, jcd, rno, close, buys, cp, q, odds, wave, wind, skippe
                           "p": round(float(cp[i]), 5),
                           "pq": round(float(cp[i] / q[i]), 3),
                           "odds": round(float(odds[i]), 1)} for i in buys],
-                "cost": len(buys) * BET_YEN,
+                "cost": len(buys) * BET_YEN, "nmot": nmot,
                 "combo": None, "pay": None, "hit": None, "ret": None,
                 # 6艇の内訳。予想サイトで開いて中身を見るため
                 "lanes": [{
@@ -216,7 +216,7 @@ KEEP_DETAIL_DAYS = 14      # 全レースの内訳を残す日数（履歴が膨
 
 
 def site_race(date, place, jcd, rno, close, status, wave, wind,
-              lanes=None, p1=None, q1=None, npt=0):
+              lanes=None, p1=None, q1=None, npt=0, nmot=None):
     """見たレースを全部残す（買い目が出なかったものも）。
 
     ★波・風で切ったレースはオッズを取っていないので、モデルの確率が無い。
@@ -232,6 +232,10 @@ def site_race(date, place, jcd, rno, close, status, wave, wind,
     races = day.setdefault("races", [])
     rec = {"jcd": jcd, "place": place, "rno": rno, "close": close,
            "status": status,
+           # 何艇にモーター純度が付いたか。節初日は少ない。
+           # ガードを外した(§23)ので、あとで「少ない回は成績が違ったか」を
+           # 検算できるように残しておく
+           "nmot": nmot,
            "wave": None if wave is None else round(float(wave)),
            "wind": None if wind is None else round(float(wind)),
            "npt": npt}
@@ -486,13 +490,14 @@ def main():
             if not args.dry:
                 site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "展示タイムがまだ出ていません", wave, wind)
             continue
-        if sum(1 for x in lanes if x.get("mot_pure") is not None) < 3:
-            print(f"  {tag} モーター純度が3艇未満(節初日?)。見送り")
-            skip("データ欠")
-            if not args.dry:
-                site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "モーター純度が足りない",
-                          wave, wind)
-            continue
+        # ★「純度が3艇未満なら見送り」を外した（2026-09-04、メモ §23）。
+        #   このガードは select_rule.py に無い。つまり95.3%のバックテストは
+        #   節初日のレースも買っていた。本番だけが違う母集団を買っていた。
+        #   捨てていたレースを測ると 回収率95.7% / 実測/市場 1.290 で遜色なし。
+        #   買い目の12%を理由なく捨てていたことになる。
+        #   壊れ検知は load_motor（空・3日以上古い）と motor.yml（500人未満で失敗）
+        #   の二段で足りている。個別レースのガードは節初日を弾いていただけ。
+        nmot = sum(1 for x in lanes if x.get("mot_pure") is not None)
         # 4. オッズ
         if time.time() - t0 > args.budget + 60:
             print(f"  {tag} 持ち時間を大きく超えたので中止")
@@ -503,7 +508,8 @@ def main():
             print(f"  {tag} オッズが取れません")
             skip("データ欠")
             if not args.dry:
-                site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "オッズが取れません", wave, wind)
+                site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "オッズが取れません",
+                          wave, wind, nmot=nmot)
             continue
         X = F.build_race(lanes, meta, q1)
         raw = np.asarray(model.predict(X), dtype=float)
@@ -515,7 +521,7 @@ def main():
             skip("帯の外／p/q不足")
             if not args.dry:
                 site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "買い目なし",
-                          wave, wind, lanes, p1, q1)
+                          wave, wind, lanes, p1, q1, nmot=nmot)
             continue
         print(f"  {tag} ★{len(buy)}点  波{wave:.0f}cm 風{wind:.0f}m  "
               + " ".join(f"{F.COMBOS[i]}(p/q {cp[i]/q[i]:.2f})" for i in buy))
@@ -525,9 +531,9 @@ def main():
             done.add(f"{jcd}-{rno}")
             site_log(date, VENUE.get(jcd, str(jcd)), jcd, rno, net,
                      buy, cp, q, odds, wave, wind, None,
-                     lanes=lanes, p1=p1, q1=q1)
+                     lanes=lanes, p1=p1, q1=q1, nmot=nmot)
             site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "買い",
-                      wave, wind, lanes, p1, q1, npt=len(buy))
+                      wave, wind, lanes, p1, q1, npt=len(buy), nmot=nmot)
             _save(st_path, sorted(done))   # ★1件ごとに残す。まとめて最後に
             bought += 1                    #   書くと、途中で落ちた回のぶんが
                                            #   記録されず二重通知になる
