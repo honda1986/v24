@@ -82,6 +82,24 @@ def rawmap(rawdir, date):
     return out or None
 
 
+def shadow(pick, odds120, combo):
+    """2着の補正を使っていたらどうだったかを、影で計算する（メモ §33）。
+
+    ★実際には買っていない。前向きの検証のためだけの記録。
+      買った組と重なっていても構わない。別勘定で持つ。
+    """
+    bg = pick.get("buys_g")
+    if bg is None:
+        return
+    pick["cost_g"] = len(bg) * BET_YEN
+    if combo in bg and combo in CIX:
+        pick["hit_g"] = True
+        pick["ret_g"] = float(odds120[CIX[combo]]) * BET_YEN
+    else:
+        pick["hit_g"] = False
+        pick["ret_g"] = 0.0
+
+
 def drift(pick, odds120):
     """通知時オッズ → 確定オッズ を、買った組ごとに書き込む。
 
@@ -123,15 +141,14 @@ def main():
     for day in h.get("days") or []:
         pend = [p for p in day.get("picks") or [] if p.get("hit") is None]
         # 目減りだけまだ入っていないレースも拾う（結果が先に入った場合）
+        rm = rawmap(args.raw, day["date"])
         nod = [p for p in day.get("picks") or []
                if any("fodds" not in b for b in (p.get("buys") or []))]
-        if nod:
-            rm = rawmap(args.raw, day["date"])
-            if rm:
-                for p in nod:
-                    od = rm.get((p["jcd"], p["rno"]))
-                    if od:
-                        drift(p, od)
+        if rm:
+            for p in nod:
+                od = rm.get((p["jcd"], p["rno"]))
+                if od:
+                    drift(p, od)
         if not pend:
             continue
         km = kmap(args.kfile, day["date"])
@@ -151,6 +168,9 @@ def main():
             p["hit"] = bool(won)
             # 1点100円なので、払戻は「オッズ×100」＝ pay をそのまま受け取る
             p["ret"] = pay if won else 0.0
+            od = (rm or {}).get((p["jcd"], p["rno"]))
+            if od is not None:
+                shadow(p, od, combo)
             filled += 1
 
     with open(SITE, "w", encoding="utf-8") as f:
@@ -192,6 +212,20 @@ def main():
         print("    確定した実測の回収率が出るまでは目安に留めること")
     else:
         print("\n（確定オッズがまだ引けていないので、目減りは測れていません）")
+
+    # --- 2着の補正を使っていたら（影の記録）---
+    gd = [p for p in picks if p.get("hit_g") is not None]
+    if gd:
+        c0 = sum(p.get("cost") or 0 for p in gd)
+        r0 = sum(p.get("ret") or 0 for p in gd)
+        c1 = sum(p.get("cost_g") or 0 for p in gd)
+        r1 = sum(p.get("ret_g") or 0 for p in gd)
+        print(f"\n2着の補正（影の記録・実際には買っていない） {len(gd)}レース")
+        print(f"  いま買っている方  {c0/BET_YEN:.0f}点  回収率 "
+              f"{r0/c0*100 if c0 else 0:.1f}%")
+        print(f"  補正を使った場合  {c1/BET_YEN:.0f}点  回収率 "
+              f"{r1/c1*100 if c1 else 0:.1f}%")
+        print("  ★60レースを超えるまでは何も言えない。数字が動いても慌てないこと")
 
 
 if __name__ == "__main__":

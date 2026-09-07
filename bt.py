@@ -136,7 +136,7 @@ def main():
     races = collect(args)
     print(f"\n買える条件のレース {len(races):,}（{args.frm} 以降）")
     rows = {False: [], True: []}
-    for d, lanes, mt, od, q, q1, hit in races:
+    for rno_, (d, lanes, mt, od, q, q1, hit) in enumerate(races):
         X = F.build_race(lanes, mt, q1)
         raw = np.asarray(m1.predict(X), dtype=float)
         p1 = raw / raw.sum()
@@ -148,7 +148,7 @@ def main():
             cp = cp / cp.sum()
             for i in np.where((q >= SR.Q_LO) & (q < SR.Q_HI))[0]:
                 rows[useg].append((cp[i] / q[i], q[i], od[i],
-                                   1.0 if i == hit else 0.0, d))
+                                   1.0 if i == hit else 0.0, d, rno_, i))
 
     def report(A, lab, ns):
         pq, qq, od, hh, dd = (A[:, i] for i in range(5))
@@ -167,6 +167,39 @@ def main():
                   f"前半 {r[h1].mean() if h1.any() else 0:.1f}% / "
                   f"後半 {r[~h1].mean() if (~h1).any() else 0:.1f}%")
 
+    def paired(A0, A1, nb):
+        """★同じレースを両方が買っているので、別々の誤差で比べてはいけない。
+        重なっている組は差に効かない。入れ替わった分だけを見て、
+        レース単位でブートストラップする（同じレースの組は一緒に揺れる）。
+        """
+        def key(A, nb):
+            s = np.argsort(-A[:, 0])[:nb]
+            return set(zip(A[s, 5].astype(int).tolist(),
+                           A[s, 6].astype(int).tolist())), s
+        k0, s0 = key(A0, nb)
+        k1, s1 = key(A1, nb)
+        m0 = np.array([(int(a), int(b)) in (k0 - k1)
+                       for a, b in zip(A0[s0, 5], A0[s0, 6])])
+        m1 = np.array([(int(a), int(b)) in (k1 - k0)
+                       for a, b in zip(A1[s1, 5], A1[s1, 6])])
+        o0, o1 = A0[s0][m0], A1[s1][m1]
+        if len(o0) == 0 or len(o1) == 0:
+            return None
+        def ret(a):
+            return a[:, 2] * a[:, 3] * 100.0          # 100円あたりの戻り(%)
+        d = (ret(o1).sum() - ret(o0).sum()) / nb
+        rng = np.random.default_rng(0)
+        r0, r1 = o0[:, 5].astype(int), o1[:, 5].astype(int)
+        allr = np.unique(np.concatenate([r0, r1]))
+        idx = {v: i for i, v in enumerate(allr)}
+        i0 = np.array([idx[v] for v in r0]); i1 = np.array([idx[v] for v in r1])
+        boot = np.empty(2000)
+        for t in range(2000):
+            w = np.bincount(rng.integers(0, len(allr), len(allr)),
+                            minlength=len(allr))
+            boot[t] = ((ret(o1) * w[i1]).sum() - (ret(o0) * w[i0]).sum()) / nb
+        return d, boot.std(ddof=1), float((boot > 0).mean()), len(o0), len(o1)
+
     A0 = np.array(rows[False])
     n_now = int((A0[:, 0] > SR.PQ_MIN).sum())
     print(f"\nいまのしきい値 {SR.PQ_MIN} で買う点数: {n_now:,}")
@@ -178,6 +211,19 @@ def main():
         th = np.quantile(A1[:, 0], 1 - n_now / len(A1))
         print(f"\n  点数を {n_now:,} に揃えるしきい値: {th:.4f}"
               f"（select_rule.PQ_MIN_G は {SR.PQ_MIN_G}）")
+        print("\n★同じ点数での「差」を、重なりを除いて日単位ブートストラップで測る")
+        print(f"  {'点数':>7}{'差(g あり − なし)':>20}{'±':>8}{'差が正の確率':>14}"
+              f"{'入替え':>12}")
+        for nb in ns:
+            if nb > min(len(A0), len(A1)):
+                continue
+            r = paired(A0, A1, nb)
+            if r is None:
+                continue
+            d, sd, pr, c0, c1 = r
+            print(f"  {nb:7,}{d:+18.1f}pt{sd:8.1f}{pr*100:13.0f}%"
+                  f"   {c0}→{c1}点")
+        print("  ※ 重なっている組は差に効かない。入替えの分だけで判定している")
     print(f"\n★収支トントンに必要な 実測/市場 は 1.337")
     print("  誤差(±)を見ること。100%を1回超えただけでは超えたことにならない")
 

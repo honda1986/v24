@@ -167,7 +167,7 @@ def card(date, jcd):
 
 
 def site_log(date, place, jcd, rno, close, buys, cp, q, odds, wave, wind, skipped,
-             lanes=None, p1=None, q1=None, nmot=None):
+             lanes=None, p1=None, q1=None, nmot=None, buys_g=None):
     """index.html が読む history.json に、この回の結果を足す。
 
     ★1レース通知するたびに書いて commit する。まとめて最後に書くと、
@@ -193,6 +193,9 @@ def site_log(date, place, jcd, rno, close, buys, cp, q, odds, wave, wind, skippe
                           "pq": round(float(cp[i] / q[i]), 3),
                           "odds": round(float(odds[i]), 1)} for i in buys],
                 "cost": len(buys) * BET_YEN, "nmot": nmot,
+                # ★2着の補正を使ったら何を買っていたか（影の記録）。
+                #   実際には買っていない。前向きの検証のためだけに残す。
+                "buys_g": buys_g,
                 "combo": None, "pay": None, "hit": None, "ret": None,
                 # 6艇の内訳。予想サイトで開いて中身を見るため
                 "lanes": [{
@@ -392,6 +395,10 @@ def main():
                     help="動作確認用。締切まで何分〜何分を対象にするか 例 4,600")
     ap.add_argument("--budget", type=int, default=200,
                     help="この秒数を過ぎたら新しいレースに着手しない")
+    # ★2着の補正を実際に使うかどうか。既定は使わない（影で記録するだけ）。
+    #   bt.py の結果が前半後半で割れたので、前向きの記録で決める（メモ §33）。
+    ap.add_argument("--use-g", dest="use_g", action="store_true",
+                    help="2着の補正を実際に使う（既定は記録だけ）")
     args = ap.parse_args()
     t0 = time.time()
     win_lo, win_hi = WIN_LO, WIN_HI
@@ -407,7 +414,8 @@ def main():
     # ★2着の補正（メモ §30）。model/lgb_2nd.txt が無ければ None で、
     #   そのとき g=1 となり従来とまったく同じ動きになる。
     m2 = SEC.load(MODEL_DIR)
-    print("2着の補正 " + ("あり" if m2 is not None else "なし（従来どおり）"))
+    print("2着の補正 " + ("なし（モデル未配置）" if m2 is None else
+                       ("使う" if args.use_g else "影で記録するだけ")))
     motor = load_motor()
 
     st_path = f"{STATE_DIR}/notified_{date}.json"
@@ -524,12 +532,19 @@ def main():
         raw = np.asarray(model.predict(X), dtype=float)
         p1 = raw / raw.sum()
         cp = F.trifecta(p1, q)
+        # ★2着の補正 g（メモ §30-33）。既定では「影で計算して記録するだけ」で、
+        #   実際に買う中身は変えない。bt.py の結果が前半後半で割れたため、
+        #   採否は前向きの記録で決める。--use-g を付けたときだけ実際に使う。
+        buy_g = None
         if m2 is not None:
             g = SEC.gmatrix(m2, lanes, dict(meta, wave=wave, wind=wind),
                             np.asarray(q, float), F.FIRST, SEC_IDX)
-            cp = cp * g[F.FIRST, SEC_IDX]
-            cp = cp / cp.sum()
-        buy = SR.pick(q, cp, SR.PQ_MIN_G if m2 is not None else None)
+            cpg = cp * g[F.FIRST, SEC_IDX]
+            cpg = cpg / cpg.sum()
+            buy_g = SR.pick(q, cpg, SR.PQ_MIN_G)
+            if args.use_g:
+                cp = cpg
+        buy = SR.pick(q, cp, SR.PQ_MIN_G if (m2 is not None and args.use_g) else None)
         if not buy:
             print(f"  {tag} 買い目なし  波{wave:.0f}cm 風{wind:.0f}m")
             skip("帯の外／p/q不足")
@@ -545,7 +560,9 @@ def main():
             done.add(f"{jcd}-{rno}")
             site_log(date, VENUE.get(jcd, str(jcd)), jcd, rno, net,
                      buy, cp, q, odds, wave, wind, None,
-                     lanes=lanes, p1=p1, q1=q1, nmot=nmot)
+                     lanes=lanes, p1=p1, q1=q1, nmot=nmot,
+                     buys_g=(None if buy_g is None
+                             else [F.COMBOS[i] for i in buy_g]))
             site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "買い",
                       wave, wind, lanes, p1, q1, npt=len(buy), nmot=nmot)
             _save(st_path, sorted(done))   # ★1件ごとに残す。まとめて最後に
