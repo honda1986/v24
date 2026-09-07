@@ -35,6 +35,11 @@ import official as OF
 import beforeinfo as BI
 import racecard as RC
 import select_rule as SR
+import second as SEC
+
+# 3連単120通りの「2着の艇」。features.FIRST と対になる並び。
+SEC_IDX = __import__("numpy").array([int(c[2]) - 1 for c in
+                                     __import__("features").COMBOS])
 import tokuten as TK          # v23 から流用(無改造)
 
 SITE = "history.json"      # 予想サイト(index.html)が読む
@@ -399,6 +404,10 @@ def main():
     topic = os.environ.get("NTFY_TOPIC", "")
     prune(date)
     model = load_model()
+    # ★2着の補正（メモ §30）。model/lgb_2nd.txt が無ければ None で、
+    #   そのとき g=1 となり従来とまったく同じ動きになる。
+    m2 = SEC.load(MODEL_DIR)
+    print("2着の補正 " + ("あり" if m2 is not None else "なし（従来どおり）"))
     motor = load_motor()
 
     st_path = f"{STATE_DIR}/notified_{date}.json"
@@ -515,7 +524,12 @@ def main():
         raw = np.asarray(model.predict(X), dtype=float)
         p1 = raw / raw.sum()
         cp = F.trifecta(p1, q)
-        buy = SR.pick(q, cp)
+        if m2 is not None:
+            g = SEC.gmatrix(m2, lanes, dict(meta, wave=wave, wind=wind),
+                            np.asarray(q, float), F.FIRST, SEC_IDX)
+            cp = cp * g[F.FIRST, SEC_IDX]
+            cp = cp / cp.sum()
+        buy = SR.pick(q, cp, SR.PQ_MIN_G if m2 is not None else None)
         if not buy:
             print(f"  {tag} 買い目なし  波{wave:.0f}cm 風{wind:.0f}m")
             skip("帯の外／p/q不足")

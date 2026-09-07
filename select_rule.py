@@ -49,6 +49,11 @@ WAVE_MAX = 3      # 波高がこの値未満(cm)。つまり 0,1,2cm
 WIND_MAX = 4      # 風速がこの値未満(m)。つまり 0〜3m
 Q_LO, Q_HI = 0.12, 0.25    # 市場確率の帯
 PQ_MIN = 1.05              # モデル確率 / 市場確率
+# ★2着の補正 g を使うときのしきい値（メモ §30）。
+#   g は p/q を中央値で約2%押し上げるので、1.05 のままだと買い目が6割増える。
+#   1.08 は「回収率が最大になる点」ではなく、**買う点数が補正前と同じになる点**。
+#   探索で選ぶと §3 のノイズ拾いになるので、点数を揃えるという基準で決めた。
+PQ_MIN_G = 1.08
 
 
 def race_ok(jcd, wave_cm, wind_ms):
@@ -64,7 +69,7 @@ def race_ok(jcd, wave_cm, wind_ms):
     return float(wave_cm) < WAVE_MAX and float(wind_ms) < WIND_MAX
 
 
-def pick(q, p):
+def pick(q, p, pq_min=None):
     """買う組の添字を返す。
 
     q : 各組の市場確率 (3連単120通り。1/オッズ を合計1に正規化したもの)
@@ -74,16 +79,16 @@ def pick(q, p):
     for i, (qi, pi) in enumerate(zip(q, p)):
         if qi <= 0:
             continue
-        if Q_LO <= qi < Q_HI and pi / qi > PQ_MIN:
+        if Q_LO <= qi < Q_HI and pi / qi > (PQ_MIN if pq_min is None else pq_min):
             out.append(i)
     return out
 
 
-def decide(jcd, wave_cm, wind_ms, q, p):
+def decide(jcd, wave_cm, wind_ms, q, p, pq_min=None):
     """1レース分の判定。買わないなら空リスト。買うなら組の添字のリスト。"""
     if not race_ok(jcd, wave_cm, wind_ms):
         return []
-    return pick(q, p)
+    return pick(q, p, pq_min)
 
 
 if __name__ == "__main__":
