@@ -36,9 +36,12 @@ import beforeinfo as BI
 import racecard as RC
 import select_rule as SR
 import second as SEC
+import third as THI
 
 # 3連単120通りの「2着の艇」。features.FIRST と対になる並び。
 SEC_IDX = __import__("numpy").array([int(c[2]) - 1 for c in
+                                     __import__("features").COMBOS])
+THI_IDX = __import__("numpy").array([int(c[4]) - 1 for c in
                                      __import__("features").COMBOS])
 import tokuten as TK          # v23 から流用(無改造)
 
@@ -416,8 +419,11 @@ def main():
     # ★2着の補正（メモ §30）。model/lgb_2nd.txt が無ければ None で、
     #   そのとき g=1 となり従来とまったく同じ動きになる。
     m2 = SEC.load(MODEL_DIR)
-    print("2着の補正 " + ("なし（モデル未配置）" if m2 is None else
-                       ("使う（採用）" if args.use_g else "使わない")))
+    m3 = THI.load(MODEL_DIR)
+    if not args.use_g:
+        m2 = m3 = None
+    print("2着の補正 " + ("使う" if m2 is not None else "なし") +
+          " / 3着の補正 " + ("使う" if m3 is not None else "なし"))
     motor = load_motor()
 
     st_path = f"{STATE_DIR}/notified_{date}.json"
@@ -541,16 +547,19 @@ def main():
         #   どちらも毎回計算して記録する。あとから比べられるようにするため。
         buy_base = SR.pick(q, cp)
         buy_alt = None
-        if m2 is not None:
-            g = SEC.gmatrix(m2, lanes, dict(meta, wave=wave, wind=wind),
-                            np.asarray(q, float), F.FIRST, SEC_IDX)
-            cpg = cp * g[F.FIRST, SEC_IDX]
+        if m2 is not None or m3 is not None:
+            mt = dict(meta, wave=wave, wind=wind)
+            qa = np.asarray(q, float)
+            cpg = cp.copy()
+            if m2 is not None:
+                g = SEC.gmatrix(m2, lanes, mt, qa, F.FIRST, SEC_IDX)
+                cpg = cpg * g[F.FIRST, SEC_IDX]
+            if m3 is not None:
+                cpg = cpg * THI.hvector(m3, lanes, mt, qa,
+                                        F.FIRST, SEC_IDX, THI_IDX)
             cpg = cpg / cpg.sum()
-            buy_g = SR.pick(q, cpg, SR.PQ_MIN_G)
-            if args.use_g:
-                cp, buy, buy_alt = cpg, buy_g, buy_base
-            else:
-                buy, buy_alt = buy_base, buy_g
+            th = SR.PQ_MIN_GH if m3 is not None else SR.PQ_MIN_G
+            cp, buy, buy_alt = cpg, SR.pick(q, cpg, th), buy_base
         else:
             buy = buy_base
         if not buy:
@@ -571,7 +580,8 @@ def main():
                      lanes=lanes, p1=p1, q1=q1, nmot=nmot,
                      buys_alt=(None if buy_alt is None
                                else [F.COMBOS[i] for i in buy_alt]),
-                     rule=("g" if (m2 is not None and args.use_g) else "base"))
+                     rule=("g+h" if m3 is not None else
+                           ("g" if m2 is not None else "base")))
             site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "買い",
                       wave, wind, lanes, p1, q1, npt=len(buy), nmot=nmot)
             _save(st_path, sorted(done))   # ★1件ごとに残す。まとめて最後に

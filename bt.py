@@ -24,9 +24,11 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import features as F          # noqa: E402
 import second as S            # noqa: E402
+import third as T             # noqa: E402
 import select_rule as SR      # noqa: E402
 
 SEC_IDX = np.array([int(c[2]) - 1 for c in F.COMBOS])
+THI_IDX = np.array([int(c[4]) - 1 for c in F.COMBOS])
 BET = 100
 
 
@@ -131,24 +133,37 @@ def main():
             sys.exit("★モデルの特徴量が features.py と食い違っています")
     m1 = lgb.Booster(model_file=f"{args.model}/lgb_mf.txt")
     m2 = S.load(args.model)
-    print(f"2着の補正 {'あり' if m2 is not None else 'なし'}")
+    m3 = T.load(args.model)
+    print(f"2着の補正 {'あり' if m2 is not None else 'なし'} / "
+          f"3着の補正 {'あり' if m3 is not None else 'なし'}")
 
     races = collect(args)
     print(f"\n買える条件のレース {len(races):,}（{args.frm} 以降）")
-    rows = {False: [], True: []}
+    names = ["base"] + (["g"] if m2 is not None else []) \
+        + (["g+h"] if (m2 is not None and m3 is not None) else
+           (["h"] if m3 is not None else []))
+    rows = {k: [] for k in names}
     for rno_, (d, lanes, mt, od, q, q1, hit) in enumerate(races):
         X = F.build_race(lanes, mt, q1)
         raw = np.asarray(m1.predict(X), dtype=float)
         p1 = raw / raw.sum()
         base = F.trifecta(p1, q)
-        g = (S.gmatrix(m2, lanes, mt, q, F.FIRST, SEC_IDX)
-             if m2 is not None else None)
-        for useg in ([False, True] if m2 is not None else [False]):
-            cp = base * (g[F.FIRST, SEC_IDX] if useg else 1.0)
+        gv = (S.gmatrix(m2, lanes, mt, q, F.FIRST, SEC_IDX)[F.FIRST, SEC_IDX]
+              if m2 is not None else 1.0)
+        hv = (T.hvector(m3, lanes, mt, q, F.FIRST, SEC_IDX, THI_IDX)
+              if m3 is not None else 1.0)
+        var = {"base": base}
+        if "g" in names:
+            var["g"] = base * gv
+        if "g+h" in names:
+            var["g+h"] = base * gv * hv
+        if "h" in names:
+            var["h"] = base * hv
+        for k, cp in var.items():
             cp = cp / cp.sum()
             for i in np.where((q >= SR.Q_LO) & (q < SR.Q_HI))[0]:
-                rows[useg].append((cp[i] / q[i], q[i], od[i],
-                                   1.0 if i == hit else 0.0, d, rno_, i))
+                rows[k].append((cp[i] / q[i], q[i], od[i],
+                                1.0 if i == hit else 0.0, d, rno_, i))
 
     def report(A, lab, ns):
         pq, qq, od, hh, dd = (A[:, i] for i in range(5))
@@ -200,30 +215,34 @@ def main():
             boot[t] = ((ret(o1) * w[i1]).sum() - (ret(o0) * w[i0]).sum()) / nb
         return d, boot.std(ddof=1), float((boot > 0).mean()), len(o0), len(o1)
 
-    A0 = np.array(rows[False])
+    AR = {k: np.array(v) for k, v in rows.items()}
+    A0 = AR["base"]
     n_now = int((A0[:, 0] > SR.PQ_MIN).sum())
     print(f"\nいまのしきい値 {SR.PQ_MIN} で買う点数: {n_now:,}")
     ns = sorted({800, 1200, n_now, 2200, 2800})
-    report(A0, "g なし（いまの本番）", ns)
-    if m2 is not None:
-        A1 = np.array(rows[True])
-        report(A1, "★g あり（2着の補正）", ns)
-        th = np.quantile(A1[:, 0], 1 - n_now / len(A1))
-        print(f"\n  点数を {n_now:,} に揃えるしきい値: {th:.4f}"
-              f"（select_rule.PQ_MIN_G は {SR.PQ_MIN_G}）")
-        print("\n★同じ点数での「差」を、重なりを除いて日単位ブートストラップで測る")
-        print(f"  {'点数':>7}{'差(g あり − なし)':>20}{'±':>8}{'差が正の確率':>14}"
-              f"{'入替え':>12}")
+    LAB = {"base": "補正なし（従来）", "g": "2着の補正のみ",
+           "h": "3着の補正のみ", "g+h": "★2着＋3着の補正"}
+    for k in names:
+        report(AR[k], LAB[k], ns)
+    for k in names[1:]:
+        th = np.quantile(AR[k][:, 0], 1 - n_now / len(AR[k]))
+        print(f"\n  【{LAB[k]}】点数を {n_now:,} に揃えるしきい値: {th:.4f}")
+    print("\n★同じ点数での「差」（重なりを除いて日単位ブートストラップ）")
+    pairs_to_test = [(a, b) for a, b in
+                     (("base", "g"), ("g", "g+h"), ("base", "g+h"),
+                      ("base", "h")) if a in names and b in names]
+    for a, b in pairs_to_test:
+        print(f"  【{LAB[b]} − {LAB[a]}】")
         for nb in ns:
-            if nb > min(len(A0), len(A1)):
+            if nb > min(len(AR[a]), len(AR[b])):
                 continue
-            r = paired(A0, A1, nb)
+            r = paired(AR[a], AR[b], nb)
             if r is None:
                 continue
             d, sd, pr, c0, c1 = r
-            print(f"  {nb:7,}{d:+18.1f}pt{sd:8.1f}{pr*100:13.0f}%"
-                  f"   {c0}→{c1}点")
-        print("  ※ 重なっている組は差に効かない。入替えの分だけで判定している")
+            print(f"    {nb:6,}点  {d:+7.1f}pt ±{sd:4.1f}  "
+                  f"正の確率 {pr*100:3.0f}%   入替え{c0}点")
+    print("  ※ 重なっている組は差に効かない。入替えの分だけで判定している")
     print(f"\n★収支トントンに必要な 実測/市場 は 1.337")
     print("  誤差(±)を見ること。100%を1回超えただけでは超えたことにならない")
 
