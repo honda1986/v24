@@ -83,12 +83,14 @@ def rawmap(rawdir, date):
 
 
 def shadow(pick, odds120, combo):
-    """2着の補正を使っていたらどうだったかを、影で計算する（メモ §33）。
+    """採用しなかったほうの作り方なら、どうだったか（メモ §34）。
 
-    ★実際には買っていない。前向きの検証のためだけの記録。
+    ★実際には買っていない。前向きの比較のためだけの記録。
       買った組と重なっていても構わない。別勘定で持つ。
     """
-    bg = pick.get("buys_g")
+    bg = pick.get("buys_alt")
+    if bg is None:
+        bg = pick.get("buys_g")      # 旧い記録との互換
     if bg is None:
         return
     pick["cost_g"] = len(bg) * BET_YEN
@@ -220,11 +222,13 @@ def main():
         r0 = sum(p.get("ret") or 0 for p in gd)
         c1 = sum(p.get("cost_g") or 0 for p in gd)
         r1 = sum(p.get("ret_g") or 0 for p in gd)
-        print(f"\n2着の補正（影の記録・実際には買っていない） {len(gd)}レース")
-        print(f"  いま買っている方  {c0/BET_YEN:.0f}点  回収率 "
-              f"{r0/c0*100 if c0 else 0:.1f}%")
-        print(f"  補正を使った場合  {c1/BET_YEN:.0f}点  回収率 "
-              f"{r1/c1*100 if c1 else 0:.1f}%")
+        rule = (gd[-1].get("rule") or "base")
+        alt = "補正なし" if rule == "g" else "補正あり"
+        print(f"\n作り方の比べ（{len(gd)}レース）")
+        print(f"  実際に買った方（{'補正あり' if rule=='g' else '補正なし'}）"
+              f"  {c0/BET_YEN:.0f}点  回収率 {r0/c0*100 if c0 else 0:.1f}%")
+        print(f"  買わなかった方（{alt}）"
+              f"      {c1/BET_YEN:.0f}点  回収率 {r1/c1*100 if c1 else 0:.1f}%")
         print("  ★60レースを超えるまでは何も言えない。数字が動いても慌てないこと")
 
 
