@@ -105,6 +105,19 @@ table.lanes tr:last-child td{border-bottom:none}
 .ln4{background:#2172D6;color:#FFFFFF}
 .ln5{background:#F5C518;color:#0B1113}
 .ln6{background:#17A05B;color:#FFFFFF}
+/* 3連単 出やすい順 */
+.tops{margin-top:6px}
+.trow{display:flex;align-items:center;gap:6px;padding:4px 2px;
+      border-bottom:1px solid rgba(38,54,59,.45)}
+.trow:last-child{border-bottom:none}
+.trow.won{background:rgba(95,192,139,.13);border-radius:4px}
+.tcmb{display:flex;gap:3px}
+.tbuy{font-size:9px;color:var(--accent);border:1px solid rgba(242,194,48,.5);
+      border-radius:3px;padding:0 3px;line-height:14px}
+.tp{margin-left:auto;font-family:var(--mono);font-variant-numeric:tabular-nums;
+    font-size:12px;color:var(--ink)}
+.to{font-family:var(--mono);font-size:10px;color:var(--dim);
+    font-variant-numeric:tabular-nums;width:54px;text-align:right}
 .nm{font-family:var(--sans);font-size:11px;color:var(--ink)}
 .pq-up{color:var(--good)}.pq-dn{color:var(--dim)}
 .fw{color:var(--accent)}
@@ -332,6 +345,7 @@ function render(data){
           `確定オッズでも条件を満たした ${p.kept}/${(p.buys||[]).length}点`));
       if(p.combo) m.appendChild(el("span", null, `結果 ${p.combo}  払戻 ${yen(p.pay||0)}`));
       r.appendChild(m);
+      if(p.top && p.top.length) r.appendChild(topList(p, true));
       if(p.lanes && p.lanes.length) r.appendChild(laneTable(p));
       sec.appendChild(r);
     }
@@ -415,6 +429,36 @@ function laneTable(p){
   return d;
 }
 
+// 3連単を「出やすい順」に並べる。買い目とは別物で、
+// 買い目は q の帯と p/q で絞ったあとの残り、こちらはモデルの素の予想。
+function topList(r, open){
+  const d = el("details", "det tops");
+  if(open) d.setAttribute("open","");
+  d.appendChild(el("summary", null, `3連単 出やすい順 ${r.top.length}点`));
+  const bought = new Set((r.buys||[]).map(b => b.combo));
+  for(const t of r.top){
+    const combo = t[0], pr = t[1], od = t[2], pq = t[3];
+    const row = el("div", "trow" + (r.combo && r.combo === combo ? " won" : ""));
+    const cb = el("div","tcmb");
+    for(const n of combo.split("-")){
+      cb.appendChild(el("span", "ln ln" + n, n));
+    }
+    row.appendChild(cb);
+    if(bought.has(combo)) row.appendChild(el("span","tbuy","買"));
+    row.appendChild(el("span","tp", (pr*100).toFixed(1) + "%"));
+    row.appendChild(el("span","to", od == null ? "—" : od.toFixed(1) + "倍"));
+    if(pq != null) row.appendChild(el("span","to", "p/q " + pq.toFixed(2)));
+    d.appendChild(row);
+  }
+  const note = el("p","note");
+  note.style.marginTop = "6px";
+  note.textContent = "モデルが見た出やすさの順。買うのはこのうち "
+    + "「オッズの帯に入っていて、市場より高く見ている組」だけなので、"
+    + "上位でも買っていない組があります。";
+  d.appendChild(note);
+  return d;
+}
+
 // 見たレースを全部並べる。買い目が出なかったものも含む。
 // ★波・風で切ったレースはオッズを取っていないので内訳が無い。
 //   全レースでモデルを回すには全レースのオッズが要り、10分に収まらない。
@@ -437,6 +481,7 @@ function allRaces(d){
     if(r.wave !== null && r.wave !== undefined)
       top.appendChild(el("span","w", `波${r.wave}cm 風${r.wind}m`));
     row.appendChild(top);
+    if(r.top && r.top.length) row.appendChild(topList(r, false));
     if(r.lanes && r.lanes.length) row.appendChild(laneTable(r));
     row.appendChild(el("div"));
     det.appendChild(row);

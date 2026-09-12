@@ -169,9 +169,33 @@ def card(date, jcd):
     return page
 
 
+TOP_N = 8          # 「出やすい順」に見せる3連単の点数
+
+def top_combos(cp, q, odds, n=TOP_N):
+    """モデルの確率が高い順に n 点。予想サイトの「3連単 出やすい順」用。
+
+    ★買い目とは別物。買い目は q の帯と p/q で絞ったあとの残りで、
+      ここは「このレースは何が出やすいと思っているか」をそのまま出す。
+      当たり前の本命が並ぶことが多いが、それがモデルの素の姿。
+    """
+    if cp is None:
+        return None
+    import numpy as _np
+    c = _np.asarray(cp, float)
+    idx = _np.argsort(-c)[:n]
+    out = []
+    for i in idx:
+        i = int(i)
+        qi = float(q[i]) if q is not None else None
+        out.append([F.COMBOS[i], round(float(c[i]), 4),
+                    None if odds is None else round(float(odds[i]), 1),
+                    None if not qi else round(float(c[i]) / qi, 2)])
+    return out
+
+
 def site_log(date, place, jcd, rno, close, buys, cp, q, odds, wave, wind, skipped,
              lanes=None, p1=None, q1=None, nmot=None, buys_alt=None,
-             rule="base"):
+             rule="base", top=None):
     """index.html が読む history.json に、この回の結果を足す。
 
     ★1レース通知するたびに書いて commit する。まとめて最後に書くと、
@@ -200,6 +224,8 @@ def site_log(date, place, jcd, rno, close, buys, cp, q, odds, wave, wind, skippe
                 # ★採用しなかったほうの買い目（影の記録）。実際には買っていない。
                 #   rule="g" なら buys_alt は補正なしの買い目、逆も同様。
                 "rule": rule, "buys_alt": buys_alt,
+                # 出やすい順 TOP_N 点（買い目とは別）。[組, p, オッズ, p/q]
+                "top": top,
                 "combo": None, "pay": None, "hit": None, "ret": None,
                 # 6艇の内訳。予想サイトで開いて中身を見るため
                 "lanes": [{
@@ -228,7 +254,7 @@ KEEP_DETAIL_DAYS = 14      # 全レースの内訳を残す日数（履歴が膨
 
 
 def site_race(date, place, jcd, rno, close, status, wave, wind,
-              lanes=None, p1=None, q1=None, npt=0, nmot=None):
+              lanes=None, p1=None, q1=None, npt=0, nmot=None, top=None):
     """見たレースを全部残す（買い目が出なかったものも）。
 
     ★波・風で切ったレースはオッズを取っていないので、モデルの確率が無い。
@@ -251,6 +277,8 @@ def site_race(date, place, jcd, rno, close, status, wave, wind,
            "wave": None if wave is None else round(float(wave)),
            "wind": None if wind is None else round(float(wind)),
            "npt": npt}
+    if top:
+        rec["top"] = top
     if lanes and p1 is not None and q1 is not None:
         rec["lanes"] = [{
             "lane": x["lane"], "name": x.get("name") or "",
@@ -567,7 +595,8 @@ def main():
             skip("帯の外／p/q不足")
             if not args.dry:
                 site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "買い目なし",
-                          wave, wind, lanes, p1, q1, nmot=nmot)
+                          wave, wind, lanes, p1, q1, nmot=nmot,
+                          top=top_combos(cp, q, odds))
             continue
         print(f"  {tag} ★{len(buy)}点  波{wave:.0f}cm 風{wind:.0f}m  "
               + " ".join(f"{F.COMBOS[i]}(p/q {cp[i]/q[i]:.2f})" for i in buy))
@@ -575,15 +604,18 @@ def main():
             continue
         if notify(topic, jcd, rno, net, buy, cp, q, wave, wind):
             done.add(f"{jcd}-{rno}")
+            tops = top_combos(cp, q, odds)
             site_log(date, VENUE.get(jcd, str(jcd)), jcd, rno, net,
                      buy, cp, q, odds, wave, wind, None,
                      lanes=lanes, p1=p1, q1=q1, nmot=nmot,
                      buys_alt=(None if buy_alt is None
                                else [F.COMBOS[i] for i in buy_alt]),
                      rule=("g+h" if m3 is not None else
-                           ("g" if m2 is not None else "base")))
+                           ("g" if m2 is not None else "base")),
+                     top=tops)
             site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "買い",
-                      wave, wind, lanes, p1, q1, npt=len(buy), nmot=nmot)
+                      wave, wind, lanes, p1, q1, npt=len(buy), nmot=nmot,
+                      top=tops)
             _save(st_path, sorted(done))   # ★1件ごとに残す。まとめて最後に
             bought += 1                    #   書くと、途中で落ちた回のぶんが
                                            #   記録されず二重通知になる
