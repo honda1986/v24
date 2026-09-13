@@ -461,7 +461,10 @@ def notify_ana(topic, jcd, rno, net, buy, cp, q, odds, wave, wind):
             "\n検証 回収率122.5%(確定オッズ・的中131本。理由は未解明)")
     payload = {"topic": topic,
                "title": f"穴側(試験) {VENUE.get(jcd, jcd)} {rno}R  ネット{net}締切",
-               "message": body, "priority": 3, "tags": ["test_tube"]}
+               # ★優先度は帯と同じ4(高)。3(既定)だと端末によっては
+               #   音も振動も出ず、締切までに気づけない（2026-09-13）。
+               #   見分けは題の「穴側(試験)」と🧪の印で付ける。
+               "message": body, "priority": 4, "tags": ["test_tube"]}
     try:
         r = requests.post("https://ntfy.sh", json=payload, timeout=15)
         if r.status_code >= 300:
