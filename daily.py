@@ -73,12 +73,18 @@ def main():
         d = (datetime.strptime(date, "%Y%m%d") - timedelta(days=i)).strftime("%Y%m%d")
         recent.append(len((days.get(d) or {}).get("picks") or []))
 
+    ana = (day or {}).get("ana") or []
     lines = [f"買い目 {len(picks)}レース "
-             f"{sum(len(p['buys']) for p in picks)}点",
-             f"見たレース {looked}（重複を除いた実数）",
-             f"実行 {runs}回（最後 {last}）"]
+             f"{sum(len(p['buys']) for p in picks)}点"]
+    if ana:
+        # ★穴側(試験)は帯とは別勘定。足し合わせて出さない（メモ §41）
+        lines.append(f"穴側(試験) {len(ana)}レース "
+                     f"{sum(len(p.get('buys') or []) for p in ana)}点")
+    lines += [f"見たレース {looked}（重複を除いた実数）",
+              f"実行 {runs}回（最後 {last}）"]
     for k, v in sorted(by.items(), key=lambda z: -z[1]):
-        if k != "買い":
+        # 「買い」「穴のみ」は見送りではないので内訳に出さない
+        if k not in ("買い", "穴のみ"):
             lines.append(f"  {k} {v}")
 
     # 異常の判定。「静かなだけ」と「壊れている」を分ける

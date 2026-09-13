@@ -250,6 +250,38 @@ def site_log(date, place, jcd, rno, close, buys, cp, q, odds, wave, wind, skippe
     _save(SITE, h)
 
 
+def site_ana(date, place, jcd, rno, close, buy, cp, q, odds, wave, wind, top=None):
+    """穴側(試験)を day["ana"] に残す。★picks には入れない。
+
+    帯の成績と混ざると、どちらが効いているのか分からなくなる。
+    集計・回収率・通知、すべて別勘定で持つ。
+    """
+    h = _load(SITE, {}) or {}
+    days = h.get("days") or []
+    day = next((d for d in days if d["date"] == date), None)
+    if day is None:
+        day = {"date": date, "picks": [], "skipped": {}}
+        days.append(day)
+    ana = day.setdefault("ana", [])
+    if any(x["jcd"] == jcd and x["rno"] == rno for x in ana):
+        return
+    ana.append({
+        "jcd": jcd, "place": place, "rno": rno, "close": close,
+        "wave": None if wave is None else round(float(wave)),
+        "wind": None if wind is None else round(float(wind)),
+        "buys": [{"combo": F.COMBOS[i], "q": round(float(q[i]), 5),
+                  "p": round(float(cp[i]), 5),
+                  "pq": round(float(cp[i] / q[i]), 3),
+                  "odds": round(float(odds[i]), 1)} for i in buy],
+        "cost": len(buy) * BET_YEN,
+        "top": top,
+        "combo": None, "pay": None, "hit": None, "ret": None,
+    })
+    h["days"] = sorted(days, key=lambda d: d["date"])
+    h["updated"] = datetime.now(OF.JST).isoformat(timespec="seconds")
+    _save(SITE, h)
+
+
 KEEP_DETAIL_DAYS = 14      # 全レースの内訳を残す日数（履歴が膨らむので）
 
 
@@ -289,8 +321,26 @@ def site_race(date, place, jcd, rno, close, status, wave, wind,
                     else round(float(x["mot_pure"]), 4)),
             "p": round(float(p1[i]), 4), "q": round(float(q1[i]), 4),
         } for i, x in enumerate(sorted(lanes, key=lambda z: z["lane"]))]
-    races[:] = [r for r in races if not (r["jcd"] == jcd and r["rno"] == rno)]
-    races.append(rec)
+    # ★すでに「買い」や「穴のみ」で記録されているレースを、あとの周で
+    #   「買い目なし」に上書きしない（2026-09-13）。
+    #   穴側を通知したあと、次の周は buy_ana が空になるので、
+    #   ガードが無いと「買い目なし」で塗りつぶされて記録が消える。
+    RANK = {"買い": 2, "穴のみ": 1}
+    old_rec = next((r for r in races
+                    if r["jcd"] == jcd and r["rno"] == rno), None)
+    if old_rec is not None and RANK.get(old_rec.get("status"), 0) > RANK.get(status, 0):
+        # 内訳と出やすい順だけ新しいものに差し替えて、状態(と点数)は残す
+        # ★ここで return してはいけない。下の保存まで進めないと書かれない
+        if lanes and p1 is not None and q1 is not None:
+            old_rec["lanes"] = rec["lanes"]
+        if top:
+            old_rec["top"] = top
+        if nmot is not None:      # ★None で上書きすると §23 の検算材料が消える
+            old_rec["nmot"] = nmot
+    else:
+        races[:] = [r for r in races
+                    if not (r["jcd"] == jcd and r["rno"] == rno)]
+        races.append(rec)
     races.sort(key=lambda r: (r.get("close") or "", r["jcd"]))
 
     # 古い日の内訳は落とす（履歴が膨らむ）
@@ -394,6 +444,34 @@ def build_lanes(rc, page, jcd, rno, motor):
 
 
 # ---------------------------------------------------------------- 通知
+def notify_ana(topic, jcd, rno, net, buy, cp, q, odds, wave, wind):
+    """穴側(試験)の通知。★実弾を入れるかはレースごとに自分で決めること。
+
+    帯の買い目とは別の通知にする。混ぜると、あとで収支を分けられなくなる。
+    """
+    if not topic:
+        print("    (ntfy トピック未設定なので通知しません)")
+        return False
+    import requests
+    lines = [f"{F.COMBOS[i]}  {odds[i]:.1f}倍  p/q {cp[i]/q[i]:.2f}" for i in buy]
+    body = ("\n".join(lines) +
+            f"\n{len(buy)}点 × {BET_YEN}円 = {len(buy)*BET_YEN:,}円"
+            f"\n波{wave:.0f}cm 風{wind:.0f}m"
+            "\n★試験運用。帯の買い目とは別勘定です"
+            "\n検証 回収率122.5%(確定オッズ・的中131本。理由は未解明)")
+    payload = {"topic": topic,
+               "title": f"穴側(試験) {VENUE.get(jcd, jcd)} {rno}R  ネット{net}締切",
+               "message": body, "priority": 3, "tags": ["test_tube"]}
+    try:
+        r = requests.post("https://ntfy.sh", json=payload, timeout=15)
+        if r.status_code >= 300:
+            print(f"    ntfy応答 {r.status_code}: {r.text[:120]}")
+        return r.status_code < 300
+    except requests.RequestException as e:
+        print(f"    通知できませんでした: {type(e).__name__}")
+        return False
+
+
 def notify(topic, jcd, rno, net, buy, cp, q, wave, wind):
     if not topic:
         print("    (ntfy トピック未設定なので通知しません)")
@@ -430,6 +508,8 @@ def main():
     # ★2着の補正（メモ §34）。モデルがあれば既定で使う。
     #   期待値では上（+2.3pt）だが確かではない（75%）。紙で回している間は
     #   期待値に従う。使わないほうも毎回記録するので、比較は続けられる。
+    ap.add_argument("--no-ana", dest="ana", action="store_false", default=True,
+                    help="穴側(試験)を出さない")
     ap.add_argument("--no-g", dest="use_g", action="store_false", default=True,
                     help="2着の補正を使わない（従来の作り方に戻す）")
     args = ap.parse_args()
@@ -452,6 +532,9 @@ def main():
         m2 = m3 = None
     print("2着の補正 " + ("使う" if m2 is not None else "なし") +
           " / 3着の補正 " + ("使う" if m3 is not None else "なし"))
+    # ★穴側(試験)は g と h の両方が要る。片方でも無ければ回らない（メモ §41）
+    ana_on = bool(args.ana and m2 is not None and m3 is not None)
+    print("穴側(試験) " + ("使う" if ana_on else "なし"))
     motor = load_motor()
 
     st_path = f"{STATE_DIR}/notified_{date}.json"
@@ -473,7 +556,12 @@ def main():
             net = OF.net_close(hhmm)
             left = OF.mins_left(net, now)
             key = f"{jcd}-{rno}"
-            if left is None or not (win_lo <= left <= win_hi) or key in done:
+            # ★穴側を使うときは、帯と穴側の両方が済むまで対象に残す。
+            #   帯だけで落とすと、帯が先に成立したレースの穴側が
+            #   （通知に失敗した場合も、あとで窓に入った場合も）二度と拾えず、
+            #   穴側の記録が「帯も出たレース」に偏って欠ける。
+            fin = key in done and (not ana_on or f"{key}a" in done)
+            if left is None or not (win_lo <= left <= win_hi) or fin:
                 continue
             todo.append((jcd, rno, net, left))
     todo.sort(key=lambda z: z[3])
@@ -482,7 +570,7 @@ def main():
     if not todo:
         return
 
-    bought = 0
+    bought = bought_ana = 0
     skips = {}          # 見送りの内訳（サイトに出す）
 
     def skip(reason):
@@ -590,39 +678,79 @@ def main():
             cp, buy, buy_alt = cpg, SR.pick(q, cpg, th), buy_base
         else:
             buy = buy_base
-        if not buy:
-            print(f"  {tag} 買い目なし  波{wave:.0f}cm 風{wind:.0f}m")
+        # ★穴側(試験)。メモ §41。帯とは別勘定で持つ。
+        #   g と h の両方が入っているときだけ。検証がその形でしか無いので、
+        #   片方でも欠けたら回さない。
+        #   ★通知済みの管理は帯と別のキー("<jcd>-<rno>a")で持つ。
+        #     同じキーにすると「穴側が先に出た → レースごと done → そのあと
+        #     帯が条件を満たしても買えない」ことが起きる。帯のほうが本命なので、
+        #     試験ルールに先を越されてはいけない。
+        if f"{jcd}-{rno}" in done:
+            buy, buy_alt = [], None      # 帯はもう通知済み。二重に出さない
+        buy_ana = []
+        if ana_on and f"{jcd}-{rno}a" not in done:
+            picked = set(buy)
+            buy_ana = [i for i in SR.pick_ana(q, cp, odds) if i not in picked]
+        if not buy and f"{jcd}-{rno}" not in done:
+            # ★帯の見送り内訳は、穴側が出たかどうかと関係なく数える。
+            #   ここを穴側とまとめると、帯の「見送り」の数字が試験ルールで動く
             skip("帯の外／p/q不足")
+        if not buy and not buy_ana:
+            print(f"  {tag} "
+                  + ("穴側も出ず(帯は通知済み)" if f"{jcd}-{rno}" in done
+                     else "買い目なし")
+                  + f"  波{wave:.0f}cm 風{wind:.0f}m")
             if not args.dry:
                 site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "買い目なし",
                           wave, wind, lanes, p1, q1, nmot=nmot,
                           top=top_combos(cp, q, odds))
             continue
-        print(f"  {tag} ★{len(buy)}点  波{wave:.0f}cm 風{wind:.0f}m  "
-              + " ".join(f"{F.COMBOS[i]}(p/q {cp[i]/q[i]:.2f})" for i in buy))
+        if buy:
+            print(f"  {tag} ★{len(buy)}点  波{wave:.0f}cm 風{wind:.0f}m  "
+                  + " ".join(f"{F.COMBOS[i]}(p/q {cp[i]/q[i]:.2f})" for i in buy))
+        if buy_ana:
+            print(f"  {tag} 穴{len(buy_ana)}点(試験)  "
+                  + " ".join(f"{F.COMBOS[i]}({odds[i]:.1f}倍 p/q {cp[i]/q[i]:.2f})"
+                             for i in buy_ana))
         if args.dry:
             continue
-        if notify(topic, jcd, rno, net, buy, cp, q, wave, wind):
-            done.add(f"{jcd}-{rno}")
+        # ★片方の通知が失敗しても、成功したほうは done に入れる。
+        #   まとめて判定すると、失敗した側のせいで成功した側まで
+        #   次の周に二重通知される。
+        ok = bool(buy) and notify(topic, jcd, rno, net, buy, cp, q, wave, wind)
+        ok_ana = bool(buy_ana) and notify_ana(topic, jcd, rno, net, buy_ana,
+                                              cp, q, odds, wave, wind)
+        if ok or ok_ana:
+            # ★通知した事実を真っ先に残す。site_* が落ちたときに
+            #   「通知は出たのに done に無い」状態になると二重通知になる
+            if ok:
+                done.add(f"{jcd}-{rno}")
+            if ok_ana:
+                done.add(f"{jcd}-{rno}a")
+            _save(st_path, sorted(done))
             tops = top_combos(cp, q, odds)
-            site_log(date, VENUE.get(jcd, str(jcd)), jcd, rno, net,
-                     buy, cp, q, odds, wave, wind, None,
-                     lanes=lanes, p1=p1, q1=q1, nmot=nmot,
-                     buys_alt=(None if buy_alt is None
-                               else [F.COMBOS[i] for i in buy_alt]),
-                     rule=("g+h" if m3 is not None else
-                           ("g" if m2 is not None else "base")),
-                     top=tops)
-            site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "買い",
-                      wave, wind, lanes, p1, q1, npt=len(buy), nmot=nmot,
-                      top=tops)
-            _save(st_path, sorted(done))   # ★1件ごとに残す。まとめて最後に
-            bought += 1                    #   書くと、途中で落ちた回のぶんが
-                                           #   記録されず二重通知になる
+            if ok:
+                site_log(date, VENUE.get(jcd, str(jcd)), jcd, rno, net,
+                         buy, cp, q, odds, wave, wind, None,
+                         lanes=lanes, p1=p1, q1=q1, nmot=nmot,
+                         buys_alt=(None if buy_alt is None
+                                   else [F.COMBOS[i] for i in buy_alt]),
+                         rule=("g+h" if m3 is not None else
+                               ("g" if m2 is not None else "base")),
+                         top=tops)
+                bought += 1
+            if ok_ana:
+                site_ana(date, VENUE.get(jcd, str(jcd)), jcd, rno, net,
+                         buy_ana, cp, q, odds, wave, wind, top=tops)
+                bought_ana += 1
+            site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net,
+                      "買い" if ok else "穴のみ",
+                      wave, wind, lanes, p1, q1, npt=len(buy) if ok else 0,
+                      nmot=nmot, top=tops)
     if not args.dry and skips:
         site_log(date, None, None, None, None, None, None, None, None,
                  None, None, skips)
-    print(f"通知 {bought}件")
+    print(f"通知 {bought}件" + (f"  穴側(試験) {bought_ana}件" if bought_ana else ""))
 
 
 if __name__ == "__main__":

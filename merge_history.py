@@ -60,6 +60,10 @@ def merge_list(base, mine, prefer_settled):
 def merge_day(base, mine):
     d = dict(base)
     d["picks"] = merge_list(base.get("picks"), mine.get("picks"), True)
+    # ★穴側(試験)も同じ扱い。ここを足し忘れると、base 側に "ana" が無い日は
+    #   d = dict(base) の時点で丸ごと消える（2026-09-13 に踏みかけた）
+    if base.get("ana") or mine.get("ana"):
+        d["ana"] = merge_list(base.get("ana"), mine.get("ana"), True)
     d["races"] = merge_list(base.get("races"), mine.get("races"), False)
     sk = dict(base.get("skipped") or {})
     for k, v in (mine.get("skipped") or {}).items():
@@ -96,8 +100,9 @@ def main():
     with open(sys.argv[2], "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False)
     tot = sum(len(d.get("picks") or []) for d in out["days"])
+    ana = sum(len(d.get("ana") or []) for d in out["days"])
     print(f"  history.json 統合: {merged}日を突き合わせ / {added}日を追加 / "
-          f"買い目 {tot}レース")
+          f"買い目 {tot}レース" + (f" / 穴側(試験) {ana}レース" if ana else ""))
 
 
 if __name__ == "__main__":

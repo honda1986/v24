@@ -156,6 +156,13 @@ table.lanes tr:last-child td{border-bottom:none}
       font-variant-numeric:tabular-nums}
 .empty{color:var(--dim);font-size:12px;padding:6px 0}
 .warn{border-color:rgba(242,194,48,.35);background:rgba(242,194,48,.05)}
+/* 穴側(試験)。帯の買い目と見分けがつくようにする */
+#anacard{border-color:rgba(120,160,255,.30)}
+.buy.ana{border-color:rgba(120,160,255,.45)}
+.race.ana{border-left:2px solid rgba(120,160,255,.55)}
+.tagana{font-size:9px;color:#8FB2FF;border:1px solid rgba(120,160,255,.45);
+        border-radius:3px;padding:0 4px;margin-left:6px;line-height:14px}
+.rtop .st.ana{border-color:#8FB2FF;color:#8FB2FF}
 .warn h2{color:var(--accent)}
 .warn p{margin:0 0 6px;font-size:12px;color:var(--sub)}
 .warn p:last-child{margin-bottom:0}
@@ -194,6 +201,18 @@ a{color:var(--blue)}
   </div>
   <div class="scale"><span>75%</span><span>100%</span><span>125%</span></div>
   <p class="note" id="sum-note" style="margin-top:9px"></p>
+</section>
+
+<section class="card" id="anacard" style="display:none">
+  <h2>穴側（試験運用）</h2>
+  <div class="kpi">
+    <div><span class="lab">回収率</span><span class="val big" id="a-roi">—</span></div>
+    <div><span class="lab">的中</span><span class="val" id="a-hit">—</span></div>
+    <div><span class="lab">買った点</span><span class="val" id="a-pts">—</span></div>
+    <div><span class="lab">収支</span><span class="val" id="a-pl">—</span></div>
+    <div><span class="lab">オッズ目減り</span><span class="val" id="a-mv">—</span></div>
+  </div>
+  <p class="note" id="a-note" style="margin-top:9px"></p>
 </section>
 
 <section class="card warn">
@@ -285,6 +304,42 @@ function render(data){
     mvEl.textContent = "—";
   }
 
+  // --- 穴側(試験)。★帯とは別勘定。上の成績には1円も混ぜない ---
+  const anaAll = days.flatMap(d => d.ana || []);
+  if(anaAll.length){
+    document.getElementById("anacard").style.display = "";
+    const ad = anaAll.filter(p => p.hit === true || p.hit === false);
+    const acost = ad.reduce((s,p)=>s+(p.cost||0),0);
+    const aret  = ad.reduce((s,p)=>s+(p.ret||0),0);
+    const apts  = anaAll.reduce((s,p)=>s+((p.buys||[]).length),0);
+    const ahit  = ad.filter(p=>p.hit===true).length;
+    const roiEl2 = document.getElementById("a-roi");
+    if(acost){
+      roiEl2.textContent = pct(aret/acost);
+      roiEl2.style.color = aret >= acost ? "var(--good)" : "var(--bad)";
+    }else{
+      roiEl2.textContent = "—";
+    }
+    document.getElementById("a-hit").innerHTML = ad.length
+      ? `${ahit}<span class="u">/${ad.length}</span>` : "—";
+    document.getElementById("a-pts").textContent = apts || "—";
+    const apl = document.getElementById("a-pl");
+    apl.textContent = ad.length ? yen(aret - acost) : "—";
+    apl.style.color = ad.length && aret >= acost ? "var(--good)" : "var(--bad)";
+    const amvs = anaAll.flatMap(p => (p.buys||[]).map(b => b.move).filter(x => x));
+    const amvEl = document.getElementById("a-mv");
+    if(amvs.length){
+      const d2 = (amvs.reduce((a,b)=>a+b,0)/amvs.length - 1) * 100;
+      amvEl.innerHTML = (d2>=0?"+":"") + d2.toFixed(1) + '<span class="u">%</span>';
+      amvEl.style.color = d2 >= 0 ? "var(--good)" : "var(--bad)";
+    }else{ amvEl.textContent = "—"; }
+    document.getElementById("a-note").textContent =
+      "1着が1号艇でない組を、オッズ8〜15倍・p/q 1.097超で買う試験ルール。"
+      + "検証値 122.5%（的中131本）ですが、なぜ効くのか説明がついていません。"
+      + `上の成績とは別勘定です。確定 ${ad.length} レース分。`
+      + (ahit < 130 ? "　※的中130本を超えるまでは運の範囲です。" : "");
+  }
+
   const box = document.getElementById("days");
   box.textContent = "";
   if(!days.length){
@@ -298,12 +353,13 @@ function render(data){
     const ds = dp.filter(p=>p.hit===true||p.hit===false);
     const dcost = ds.reduce((s,p)=>s+(p.cost||0),0);
     const dret  = ds.reduce((s,p)=>s+(p.ret||0),0);
+    const na = (d.ana||[]).length;
     head.appendChild(el("span","dsum",
-      ds.length ? `${dp.length}R  ${pct(dret/dcost)}  ${yen(dret-dcost)}`
-                : `${dp.length}R  結果待ち`));
+      (ds.length ? `${dp.length}R  ${pct(dret/dcost)}  ${yen(dret-dcost)}`
+                 : `${dp.length}R  結果待ち`) + (na ? `　穴${na}R` : "")));
     sec.appendChild(head);
 
-    if(!dp.length){
+    if(!dp.length && !(d.ana||[]).length){
       sec.appendChild(el("p","empty","この日は買い目が出ませんでした（正常です）。"));
     }
     for(const p of dp){
@@ -347,6 +403,40 @@ function render(data){
       r.appendChild(m);
       if(p.top && p.top.length) r.appendChild(topList(p, true));
       if(p.lanes && p.lanes.length) r.appendChild(laneTable(p));
+      sec.appendChild(r);
+    }
+
+    for(const p of (d.ana||[])){
+      const cls = p.hit === true ? "race ana hit" : (p.hit === false ? "race ana miss" : "race ana");
+      const r = el("div", cls);
+      const h = el("div","rhead");
+      h.appendChild(el("span","place", p.place || p.jcd));
+      h.appendChild(el("span","rno", `${p.rno}R`));
+      h.appendChild(el("span","tagana","穴側 試験"));
+      h.appendChild(el("span", "tag " + (p.hit===true?"hit":p.hit===false?"miss":"wait"),
+        p.hit===true ? `的中 ${yen(p.ret)}` : p.hit===false ? "不的中" : "結果待ち"));
+      r.appendChild(h);
+      const bs = el("div","buys");
+      for(const b of (p.buys||[])){
+        const won = p.combo && b.combo === p.combo;
+        const e = el("span","buy ana" + (won ? " won" : ""));
+        e.appendChild(document.createTextNode(b.combo));
+        e.appendChild(el("span","pq", `${b.odds}倍 p/q ${Number(b.pq).toFixed(2)}`));
+        if(b.move){
+          const dd = (b.move - 1) * 100;
+          e.appendChild(el("span", "mv " + (dd >= 0 ? "up" : "dn"),
+            `→${b.fodds} (${dd>=0?"+":""}${dd.toFixed(0)}%)`));
+        }
+        bs.appendChild(e);
+      }
+      r.appendChild(bs);
+      const m = el("div","meta");
+      if(p.wave !== undefined && p.wave !== null)
+        m.appendChild(el("span", null, `波 ${p.wave}cm  風 ${p.wind}m`));
+      m.appendChild(el("span", null, `${(p.buys||[]).length}点 ${yen(p.cost||0)}`));
+      if(p.combo) m.appendChild(el("span", null, `結果 ${p.combo}  払戻 ${yen(p.pay||0)}`));
+      r.appendChild(m);
+      if(p.top && p.top.length) r.appendChild(topList(p, false));
       sec.appendChild(r);
     }
 
@@ -462,7 +552,7 @@ function topList(r, open){
 // 見たレースを全部並べる。買い目が出なかったものも含む。
 // ★波・風で切ったレースはオッズを取っていないので内訳が無い。
 //   全レースでモデルを回すには全レースのオッズが要り、10分に収まらない。
-const ST_CLASS = {"買い":"buy", "買い目なし":"none", "波・風":"cut"};
+const ST_CLASS = {"買い":"buy", "穴のみ":"ana", "買い目なし":"none", "波・風":"cut"};
 
 function allRaces(d){
   const det = el("details","allraces");

@@ -117,6 +117,33 @@ def collect(args):
     return out
 
 
+def ana_report(A):
+    """穴側(試験)の成績を出す。A の列は (pq, q, odds, hit, date, race)
+
+    ★メモ §41。帯とは別勘定。ここでも混ぜない。
+      本番は select_rule.pick_ana がそのまま選ぶので、
+      ここに来る時点で「1着≠1号艇 / 8〜15倍 / p/q>閾値」を満たしている。
+    """
+    if len(A) == 0:
+        print("\n【穴側(試験)】買い目なし")
+        return
+    pq, qq, od, hh, dd, ri = (A[:, i] for i in range(6))
+    nr = len(np.unique(ri))
+    r = hh * od * 100.0
+    e = np.quantile(dd, [0, 1 / 3, 2 / 3, 1.0])
+    per = " / ".join(
+        f"{(hh[m] * od[m] * 100.0).mean():.0f}%"
+        for m in ((dd >= lo) & (dd <= hi) for lo, hi in zip(e[:-1], e[1:]))
+        if m.sum() > 0)
+    print(f"\n【穴側(試験)】1着≠1号艇 / オッズ"
+          f"{SR.ANA_ODDS_LO:.0f}〜{SR.ANA_ODDS_HI:.0f}倍 / p/q>{SR.ANA_PQ_MIN}")
+    print(f"  {nr:,}レース {len(A):,}点（平均 {len(A)/nr:.2f}点/レース）")
+    print(f"  回収率 {r.mean():6.1f}% ±{r.std(ddof=1)/np.sqrt(len(A)):4.1f}  "
+          f"実測/市場 {hh.sum()/qq.sum():.3f}  的中 {int(hh.sum())}本  3期 {per}")
+    print("  検証値(2025/04-2026/08): 992レース 1,269点 的中131本 122.5% 1.60")
+    print("  ★これは実弾ではない。理由が説明できていないルール（メモ §41）")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--raw", default="v22/raw")
@@ -143,6 +170,7 @@ def main():
         + (["g+h"] if (m2 is not None and m3 is not None) else
            (["h"] if m3 is not None else []))
     rows = {k: [] for k in names}
+    ana_rows = []
     for rno_, (d, lanes, mt, od, q, q1, hit) in enumerate(races):
         X = F.build_race(lanes, mt, q1)
         raw = np.asarray(m1.predict(X), dtype=float)
@@ -164,6 +192,15 @@ def main():
             for i in np.where((q >= SR.Q_LO) & (q < SR.Q_HI))[0]:
                 rows[k].append((cp[i] / q[i], q[i], od[i],
                                 1.0 if i == hit else 0.0, d, rno_, i))
+        # ★穴側(試験)。本番と同じ関数で選ぶ（自分で条件を書き直さない）
+        if "g+h" in var:
+            cpa = var["g+h"] / var["g+h"].sum()
+            band = set(SR.pick(q, cpa, SR.PQ_MIN_GH))
+            for i in SR.pick_ana(q, cpa, od):
+                if i in band:
+                    continue
+                ana_rows.append((cpa[i] / q[i], q[i], od[i],
+                                 1.0 if i == hit else 0.0, d, rno_))
 
     def report(A, lab, ns):
         pq, qq, od, hh, dd = (A[:, i] for i in range(5))
@@ -227,6 +264,7 @@ def main():
     for k in names[1:]:
         th = np.quantile(AR[k][:, 0], 1 - n_now / len(AR[k]))
         print(f"\n  【{LAB[k]}】点数を {n_now:,} に揃えるしきい値: {th:.4f}")
+    ana_report(np.array(ana_rows) if ana_rows else np.empty((0, 6)))
     print("\n★同じ点数での「差」（重なりを除いて日単位ブートストラップ）")
     pairs_to_test = [(a, b) for a, b in
                      (("base", "g"), ("g", "g+h"), ("base", "g+h"),

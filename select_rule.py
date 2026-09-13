@@ -60,6 +60,61 @@ PQ_MIN_G = 1.078          # 本番の bt.py が出した「点数を揃える値
 PQ_MIN_GH = 1.097
 
 
+# ---------------------------------------------------------------- 穴側(試験)
+# ★メモ §41 (2026-09-13)。これは **本採用ではない**。
+#   帯の買い目とは別勘定で持ち、通知も分け、回収率も分けて数える。
+#
+#   条件: 1着が1号艇でない × 締切前オッズ 8.0〜15.0倍 × p/q > 1.097
+#
+#   検証 (20250401-20260818 / 淡水以外・波<3cm・風<4m / g と h を入れた p)
+#     992レース 1,269点 (平均1.28点/レース) 的中131レース
+#     回収率 122.5% ±10.0   実測/市場 1.60   3期 127% / 121% / 119%
+#     対照: 同じオッズ帯で1着=1号艇 88.2% / 選別なし 84.9% / 淡水 69.9%
+#     探索込みの順列検定 p=0.015 (そのマス単独なら 0.0007)
+#
+#   ★承知しておくこと
+#     ・**なぜそこだけ効くのか説明できていない。** 数の少なさより、
+#       機序が無いことのほうが弱点。説明のつかない効果は先に消える。
+#     ・g と h の両方が入った p でしか測っていない。片方でも無ければ使わない。
+#     ・オッズ 8〜15 は「確定オッズ」で測った窓。本番は締切前オッズで判定する。
+#       境界付近の組は入ったり出たりする。そのぶん検証値より下がりうる。
+#     ・窓が繊細。7〜18倍に広げるだけで 104%、6〜25倍で 100% まで落ちる。
+ANA_ODDS_LO = 8.0
+ANA_ODDS_HI = 15.0
+ANA_PQ_MIN = 1.097        # PQ_MIN_GH と同じ値。ここで選び直してはいない
+
+# 3連単120通りの並びは features.COMBOS と同じ構成で作る（メモ §15）。
+# 片方だけ直すと本番と検証がずれるので、__main__ の自己テストで突き合わせる。
+_COMBOS = [f"{a}-{b}-{c}" for a in range(1, 7) for b in range(1, 7) if b != a
+           for c in range(1, 7) if c not in (a, b)]
+FIRST1 = [int(c[0]) for c in _COMBOS]      # 各組の1着号艇 (1〜6)
+
+
+def pick_ana(q, p, odds, pq_min=None):
+    """穴側(試験)の買い目の添字を返す。
+
+    q     : 各組の市場確率 (120通り)
+    p     : 各組のモデル確率 (g と h を入れたもの。合計1)
+    odds  : 各組の締切前オッズ (120通り。fetch_odds が返す生の倍率)
+
+    ★race_ok は呼び出し側で確かめること。帯と同じ足切りを使う。
+    """
+    lo = ANA_PQ_MIN if pq_min is None else pq_min
+    out = []
+    for i, one in enumerate(FIRST1):
+        if one == 1:                      # 1着が1号艇の組は買わない
+            continue
+        qi = q[i]
+        if qi is None or qi <= 0:
+            continue
+        o = odds[i]
+        if o is None or not (ANA_ODDS_LO <= float(o) < ANA_ODDS_HI):
+            continue
+        if p[i] / qi > lo:
+            out.append(i)
+    return out
+
+
 def race_ok(jcd, wave_cm, wind_ms):
     """このレースを買ってよいか。波高・風速は直前情報の値を渡すこと。
 
@@ -70,7 +125,14 @@ def race_ok(jcd, wave_cm, wind_ms):
         return False
     if wave_cm is None or wind_ms is None:
         return False
-    return float(wave_cm) < WAVE_MAX and float(wind_ms) < WIND_MAX
+    w, v = float(wave_cm), float(wind_ms)
+    # ★下限も見る（2026-09-13 追加）。検証データでは欠損が -1 / -99 で入って
+    #   おり、上限しか見ないとそれが「波-1cm・風-99m」として買い対象に
+    #   なってしまう。本番の直前情報は None で来る想定だが、パーサが
+    #   変わって負値が来たときに黙って買うほうが危ない。
+    if w < 0 or v < 0:
+        return False
+    return w < WAVE_MAX and v < WIND_MAX
 
 
 def pick(q, p, pq_min=None):
@@ -110,7 +172,43 @@ if __name__ == "__main__":
     print("波6cmは見送り            :", decide(24, 6, 2, q, p) == [])
     print("風5mは見送り             :", decide(24, 1, 5, q, p) == [])
     print("気象が取れなければ見送り   :", decide(24, None, 2, q, p) == [])
+    print("負の値も見送り            :", decide(24, -1, -99, q, p) == [])
     sel = decide(24, 1, 2, q, p)
     print(f"大村・波1cm・風2m の買い目: {len(sel)}点  "
           f"(帯{inband}点のうち p/q>1.05 を満たしたもの)")
     print("参考: 実データでは1レースあたり 帯 約2.7点 → 買い目 平均1.3点")
+
+    # --- 穴側(試験)の自己テスト ---
+    import features as F          # noqa: E402
+    assert list(F.COMBOS) == _COMBOS, "★COMBOS の並びが features.py とずれている"
+    assert [int(x) + 1 for x in F.FIRST] == FIRST1, "★FIRST の作り方がずれている"
+    print("\n穴側(試験)")
+    print("  COMBOS の並びは features.py と一致")
+    # ★狙った組だけが選ばれるかを、手で作った盤面で確かめる。
+    #   1着が2号艇の組の添字は 20〜39（COMBOS の並び）
+    i_ok   = _COMBOS.index("2-1-3")   # オッズ10倍・p/q 1.20 → 選ばれるはず
+    i_odds = _COMBOS.index("2-1-4")   # オッズ 7.9倍 → 窓の外
+    i_odds2 = _COMBOS.index("2-1-5")  # オッズ15.0倍 → 窓の外(上は未満)
+    i_pq   = _COMBOS.index("2-1-6")   # p/q 1.09 → 閾値以下
+    i_one  = _COMBOS.index("1-2-3")   # オッズ10倍・p/q 1.20 だが1着が1号艇
+    qq = [0.002] * 120
+    oo = [100.0] * 120
+    pp = [0.002] * 120
+    for idx, o, ratio in ((i_ok, 10.0, 1.20), (i_odds, 7.9, 1.20),
+                          (i_odds2, 15.0, 1.20), (i_pq, 10.0, 1.09),
+                          (i_one, 10.0, 1.20)):
+        qq[idx] = 0.748 / o
+        oo[idx] = o
+        pp[idx] = qq[idx] * ratio
+    ana = pick_ana(qq, pp, oo)
+    print(f"  選ばれたのは 2-1-3 だけ          : {ana == [i_ok]}  "
+          f"({[_COMBOS[i] for i in ana]})")
+    print(f"  オッズ7.9倍は入らない            : {i_odds not in ana}")
+    print(f"  オッズ15.0倍ちょうどは入らない   : {i_odds2 not in ana}")
+    print(f"  p/q 1.09 は入らない              : {i_pq not in ana}")
+    print(f"  1着が1号艇は入らない             : {i_one not in ana}")
+    # 帯(q 0.12〜0.25 = 約3〜6倍)と窓(8〜15倍)は重ならない
+    odds = [0.748 / x for x in q]
+    band = set(pick(q, p, PQ_MIN_GH))
+    print(f"  帯の買い目と重ならない           : "
+          f"{not (band & set(pick_ana(q, p, odds)))}")

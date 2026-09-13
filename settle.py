@@ -34,6 +34,7 @@ import urllib.request
 SITE = "history.json"
 BET_YEN = 100
 PQ_MIN = 1.05          # select_rule と同じ。確定オッズでも満たすか数えるため
+PQ_ANA = 1.097         # 穴側(試験)のしきい値。select_rule.ANA_PQ_MIN と同じ
 RAW_URL = "https://raw.githubusercontent.com/honda1986/v22/main/raw/{}.json.gz"
 
 COMBOS = [f"{a}-{b}-{c}" for a in range(1, 7) for b in range(1, 7) if b != a
@@ -102,7 +103,7 @@ def shadow(pick, odds120, combo):
         pick["ret_g"] = 0.0
 
 
-def drift(pick, odds120):
+def drift(pick, odds120, pq_min=PQ_MIN):
     """通知時オッズ → 確定オッズ を、買った組ごとに書き込む。
 
     確定オッズから市場確率 q を作り直し、p/q がまだ基準を超えているかも見る。
@@ -120,7 +121,7 @@ def drift(pick, odds120):
         b["fq"] = round(fq, 5)
         b["fpq"] = round(float(b["p"]) / fq, 3) if fq > 0 else None
         b["move"] = round(fo / float(b["odds"]), 3) if b.get("odds") else None
-        if b["fpq"] is not None and b["fpq"] > PQ_MIN:
+        if b["fpq"] is not None and b["fpq"] > pq_min:
             kept += 1
     pick["kept"] = kept
     return kept
@@ -139,7 +140,7 @@ def main():
         print(f"{SITE} がありません。まだ1件も通知が出ていません")
         return
 
-    filled = waiting = 0
+    filled = waiting = afilled = 0
     for day in h.get("days") or []:
         pend = [p for p in day.get("picks") or [] if p.get("hit") is None]
         # 目減りだけまだ入っていないレースも拾う（結果が先に入った場合）
@@ -151,12 +152,21 @@ def main():
                 od = rm.get((p["jcd"], p["rno"]))
                 if od:
                     drift(p, od)
-        if not pend:
+        # ★穴側(試験)も同じ突き合わせをする。ただし別勘定（メモ §41）。
+        apend = [p for p in day.get("ana") or [] if p.get("hit") is None]
+        if rm:
+            for p in day.get("ana") or []:
+                if any("fodds" not in b for b in (p.get("buys") or [])):
+                    od = rm.get((p["jcd"], p["rno"]))
+                    if od:
+                        drift(p, od, PQ_ANA)
+        if not pend and not apend:
             continue
         km = kmap(args.kfile, day["date"])
         if km is None:
-            waiting += len(pend)
-            print(f"  {day['date']} Kファイルがまだありません（{len(pend)}件は結果待ち）")
+            waiting += len(pend) + len(apend)
+            print(f"  {day['date']} Kファイルがまだありません"
+                  f"（{len(pend)+len(apend)}件は結果待ち）")
             continue
         for p in pend:
             got = km.get((p["jcd"], p["rno"]))
@@ -174,6 +184,18 @@ def main():
             if od is not None:
                 shadow(p, od, combo)
             filled += 1
+        for p in apend:
+            got = km.get((p["jcd"], p["rno"]))
+            if not got:
+                waiting += 1
+                continue
+            combo, pay = got
+            won = [b for b in p["buys"] if b["combo"] == combo]
+            p["combo"] = combo
+            p["pay"] = pay
+            p["hit"] = bool(won)
+            p["ret"] = pay if won else 0.0
+            afilled += 1
 
     with open(SITE, "w", encoding="utf-8") as f:
         json.dump(h, f, ensure_ascii=False)
@@ -183,13 +205,29 @@ def main():
     done = [p for p in picks if p.get("hit") is not None]
     cost = sum(p.get("cost") or 0 for p in done)
     ret = sum(p.get("ret") or 0 for p in done)
-    print(f"\n結果を入れた {filled}件 / 結果待ち {waiting}件")
+    print(f"\n結果を入れた {filled}件"
+          + (f"（＋穴側 {afilled}件）" if afilled else "")
+          + f" / 結果待ち {waiting}件")
     if done:
         print(f"確定 {len(done)}レース  的中 {sum(1 for p in done if p['hit'])}  "
               f"回収率 {ret/cost*100:.1f}%  収支 {ret-cost:+,.0f}円")
         print("★60レースを超えるまでは、ほぼ運の範囲。数字が動いても慌てないこと")
     else:
         print("まだ確定したレースがありません")
+
+    # --- 穴側(試験)の成績。★帯とは混ぜない ---
+    ana = [p for d in (h.get("days") or []) for p in (d.get("ana") or [])]
+    adone = [p for p in ana if p.get("hit") is not None]
+    if ana:
+        acost = sum(p.get("cost") or 0 for p in adone)
+        aret = sum(p.get("ret") or 0 for p in adone)
+        print(f"\n穴側(試験) {len(ana)}レース "
+              f"{sum(len(p.get('buys') or []) for p in ana)}点 / 確定 {len(adone)}レース")
+        if acost:
+            print(f"  的中 {sum(1 for p in adone if p['hit'])}  "
+                  f"回収率 {aret/acost*100:.1f}%  収支 {aret-acost:+,.0f}円"
+                  "  ★これは実弾ではない。買うかはレースごとに自分で決めたもの")
+            print("  検証値は122.5%。的中130本を超えるまでは運の範囲")
 
     # --- オッズの目減り ---
     mv = [b["move"] for p in picks for b in (p.get("buys") or [])
@@ -222,10 +260,15 @@ def main():
         r0 = sum(p.get("ret") or 0 for p in gd)
         c1 = sum(p.get("cost_g") or 0 for p in gd)
         r1 = sum(p.get("ret_g") or 0 for p in gd)
+        # ★rule は「実際に買ったほうの作り方」。yosou.py は m3 があれば
+        #   "g+h" を書く。ここを rule=="g" だけで判定していたため、
+        #   本番の既定値 "g+h" ではラベルが左右逆に出ていた（2026-09-13 修正）。
         rule = (gd[-1].get("rule") or "base")
-        alt = "補正なし" if rule == "g" else "補正あり"
-        print(f"\n作り方の比べ（{len(gd)}レース）")
-        print(f"  実際に買った方（{'補正あり' if rule=='g' else '補正なし'}）"
+        NAME = {"g+h": "2着＋3着の補正あり", "g": "2着の補正あり", "base": "補正なし"}
+        used = NAME.get(rule, rule)
+        alt = "補正なし" if rule in ("g", "g+h") else "補正あり"
+        print(f"\n作り方の比べ（{len(gd)}レース / 実際に買ったのは {rule}）")
+        print(f"  実際に買った方（{used}）"
               f"  {c0/BET_YEN:.0f}点  回収率 {r0/c0*100 if c0 else 0:.1f}%")
         print(f"  買わなかった方（{alt}）"
               f"      {c1/BET_YEN:.0f}点  回収率 {r1/c1*100 if c1 else 0:.1f}%")
