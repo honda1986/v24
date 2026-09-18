@@ -1,0 +1,45 @@
+{
+  "_1_必ず読むこと": [
+    "このファイルの i_have_read_the_terms を true にするまで、実際の投票はしません。",
+    "テレボートの『電話投票に関する約定』に自動操作の扱いが書かれています。",
+    "自分で読んで、問題ないと判断したときだけ true にしてください。",
+    "判断できないなら false のままにしてください。dry モードで全部動きます。"
+  ],
+  "i_have_read_the_terms": false,
+  "_2_上限": [
+    "null にすると無制限。入金額そのものが本来の上限なので、最終的には null でよい。",
+    "最初は残高より少し下に置いておくこと。使いすぎ防止ではなくバグ避けです。",
+    "ループの暴走や二重投票の判定ミスで、残高を一度に溶かさないための保険。"
+  ],
+  "bet_yen": 100,
+  "max_yen_per_day": 2000,
+  "max_points_per_race": 4,
+  "_3_どれを買うか": "obi=帯(本番) / ana=穴側(試験)。穴側は既定でオフ",
+  "buy_obi": true,
+  "buy_ana": false,
+  "_4_締切までの時間(分)": "この範囲のレースだけ投票する",
+  "close_min_minutes": 3,
+  "close_max_minutes": 25,
+  "_5_取得元": "v24 が書いた history.json",
+  "history_url": "https://raw.githubusercontent.com/honda1986/v24/main/history.json",
+  "poll_seconds": 120,
+  "_6_ブラウザ": [
+    "初回だけ login モードで手動ログインし、そのプロファイルを使い回す。",
+    "加入者番号・暗証番号はここにも他のどこにも保存しない。",
+    "profile_dir は .gitignore に入れて、絶対に共有しないこと。"
+  ],
+  "profile_dir": "chrome_profile",
+  "use_installed_chrome": true,
+  "headless": false,
+  "_7_テレボート": [
+    "login / dry / live で開くURL。ご自身で確認して書き入れてください。",
+    "空のままだと login モードは起動しません。",
+    "画面のセレクタは telebote_page.py の SELECTORS に codegen で採取して入れます。"
+  ],
+  "telebote_url": "",
+  "_8_置き場所": "いずれも config.json のあるフォルダからの相対。触らなくてよい",
+  "bet_done_path": "bet_done.json",
+  "log_path": "logs/auto_bet.log",
+  "shot_dir": "shots",
+  "stop_file": "STOP"
+}
