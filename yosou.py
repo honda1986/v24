@@ -274,6 +274,9 @@ def site_ana(date, place, jcd, rno, close, buy, cp, q, odds, wave, wind, top=Non
                   "pq": round(float(cp[i] / q[i]), 3),
                   "odds": round(float(odds[i]), 1)} for i in buy],
         "cost": len(buy) * BET_YEN,
+        # ★そのレースの最低オッズ。§45 の足切り（8倍未満のレースだけ買う）が
+        #   効いているかを、あとから記録だけで検算できるようにする
+        "omin": round(float(min(odds)), 1),
         "top": top,
         "combo": None, "pay": None, "hit": None, "ret": None,
     })
@@ -458,7 +461,7 @@ def notify_ana(topic, jcd, rno, net, buy, cp, q, odds, wave, wind):
             f"\n{len(buy)}点 × {BET_YEN}円 = {len(buy)*BET_YEN:,}円"
             f"\n波{wave:.0f}cm 風{wind:.0f}m"
             "\n★試験運用。帯の買い目とは別勘定です"
-            "\n検証 回収率122.5%(確定オッズ・的中131本。理由は未解明)")
+            "\n検証 回収率153.6%(確定オッズ・的中73本)")
     payload = {"topic": topic,
                "title": f"穴側(試験) {VENUE.get(jcd, jcd)} {rno}R  ネット{net}締切",
                # ★優先度は帯と同じ4(高)。3(既定)だと端末によっては

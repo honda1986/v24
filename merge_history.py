@@ -43,6 +43,11 @@ def merge_list(base, mine, prefer_settled):
             # ★結果(hit)が入っているほうを優先する。settle の仕事を消さない。
             #   両方に入っていなければ、内訳の多い自分のほうを採る。
             if cur.get("hit") is not None and x.get("hit") is None:
+                # ★リモートを丸ごと採ると、自分にしか無い新しい項目
+                #   （omin など）が消える。無いキーだけ足しておく
+                for a2, b2 in x.items():
+                    if a2 not in cur and b2 is not None:
+                        cur[a2] = b2
                 continue
             if x.get("hit") is not None and cur.get("hit") is None:
                 out[k] = x

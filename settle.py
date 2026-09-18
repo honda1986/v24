@@ -227,7 +227,7 @@ def main():
             print(f"  的中 {sum(1 for p in adone if p['hit'])}  "
                   f"回収率 {aret/acost*100:.1f}%  収支 {aret-acost:+,.0f}円"
                   "  ★これは実弾ではない。買うかはレースごとに自分で決めたもの")
-            print("  検証値は122.5%。的中130本を超えるまでは運の範囲")
+            print("  検証値は153.6%。的中70本を超えるまでは運の範囲")
 
     # --- オッズの目減り ---
     mv = [b["move"] for p in picks for b in (p.get("buys") or [])

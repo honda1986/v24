@@ -131,16 +131,19 @@ def ana_report(A):
     nr = len(np.unique(ri))
     r = hh * od * 100.0
     e = np.quantile(dd, [0, 1 / 3, 2 / 3, 1.0])
-    per = " / ".join(
-        f"{(hh[m] * od[m] * 100.0).mean():.0f}%"
-        for m in ((dd >= lo) & (dd <= hi) for lo, hi in zip(e[:-1], e[1:]))
-        if m.sum() > 0)
+    # ★最後の期だけ右端を含める。両方を閉区間にすると、分位点にぴったり
+    #   一致した日のレースが2つの期に入る
+    masks = [(dd >= lo) & (dd < hi) for lo, hi in zip(e[:-1], e[1:])]
+    masks[-1] = (dd >= e[-2]) & (dd <= e[-1])
+    per = " / ".join(f"{(hh[m] * od[m] * 100.0).mean():.0f}%"
+                     for m in masks if m.sum() > 0)
     print(f"\n【穴側(試験)】1着≠1号艇 / オッズ"
-          f"{SR.ANA_ODDS_LO:.0f}〜{SR.ANA_ODDS_HI:.0f}倍 / p/q>{SR.ANA_PQ_MIN}")
+          f"{SR.ANA_ODDS_LO:.0f}〜{SR.ANA_ODDS_HI:.0f}倍 / p/q>{SR.ANA_PQ_MIN}"
+          f" / レース最低オッズ<{SR.ANA_RACE_MIN_ODDS:.0f}倍")
     print(f"  {nr:,}レース {len(A):,}点（平均 {len(A)/nr:.2f}点/レース）")
     print(f"  回収率 {r.mean():6.1f}% ±{r.std(ddof=1)/np.sqrt(len(A)):4.1f}  "
           f"実測/市場 {hh.sum()/qq.sum():.3f}  的中 {int(hh.sum())}本  3期 {per}")
-    print("  検証値(2025/04-2026/08): 992レース 1,269点 的中131本 122.5% 1.60")
+    print("  検証値(225日): 466レース 551点 的中73本 153.6% 2.04")
     print("  ★これは実弾ではない。理由が説明できていないルール（メモ §41）")
 
 
