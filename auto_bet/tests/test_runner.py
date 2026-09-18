@@ -187,13 +187,24 @@ class TestCycle(Base):
         self.assertEqual(fake.calls, [])
         self.assertEqual(self.store.keys(), set())
 
+    def test_買い目が無い周でも動いていることが分かる行を出す(self):
+        r = self.runner("check", [day([race(close="18:00")])])
+        r.cycle()
+        with open(self.cfg.path("log_path"), encoding="utf-8") as f:
+            line = f.read().splitlines()[0]
+        self.assertIn("見た", line)
+        self.assertIn("今日 帯1 レース", line)
+        self.assertIn("いま投票できる組 0件", line)
+        self.assertIn("次は 大村9R 帯 締切18:00", line)
+
     def test_ログが1行1イベントで残る(self):
         r = self.runner("live", [day([race()])], bet_fn=FakeBetter())
         r.cycle()
         with open(self.cfg.path("log_path"), encoding="utf-8") as f:
             lines = [ln for ln in f.read().splitlines() if ln]
-        self.assertEqual(len(lines), 1)
-        cols = lines[0].split("\t")
+        bets = [ln for ln in lines if "投票した" in ln]
+        self.assertEqual(len(bets), 1)
+        cols = bets[0].split("\t")
         self.assertEqual(cols[1:8], ["live", "大村9R", "帯", "2-1-4", "1点", "100円",
                                      "投票した"])
 

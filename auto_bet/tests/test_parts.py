@@ -149,6 +149,31 @@ class TestSelect(unittest.TestCase):
         self.assertEqual(res.bets[0].key, "20260918-24-9-2-1-4-帯")
 
 
+class TestSummary(unittest.TestCase):
+    def test_次に締め切られるレースを教える(self):
+        d = day([race(close="15:00"), race(jcd=17, place="宮島", rno=3, close="16:30")])
+        n_obi, n_ana, nxt = selector.summary(d, cfg(), NOW)
+        self.assertEqual((n_obi, n_ana), (2, 0))
+        self.assertIn("大村9R", nxt)
+        self.assertIn("あと10分", nxt)
+
+    def test_締切を過ぎたものは次に数えない(self):
+        d = day([race(close="09:00"), race(jcd=17, place="宮島", rno=3, close="16:30")])
+        self.assertIn("宮島3R", selector.summary(d, cfg(), NOW)[2])
+
+    def test_この後の予定が無い日(self):
+        self.assertIn("予定は無し", selector.summary(day([race(close="09:00")]),
+                                                     cfg(), NOW)[2])
+
+    def test_今日が無い日でも落ちない(self):
+        self.assertEqual(selector.summary(None, cfg(), NOW)[:2], (0, 0))
+
+    def test_穴側を買わない設定なら穴は数えない(self):
+        d = day([race()], ana=[race(rno=5, close="15:05")])
+        self.assertEqual(selector.summary(d, cfg(), NOW)[:2], (1, 0))
+        self.assertEqual(selector.summary(d, cfg(buy_ana=True), NOW)[:2], (1, 1))
+
+
 class TestHistorySource(unittest.TestCase):
     def test_キャッシュ避けのクエリが付く(self):
         self.assertEqual(history_source.bust("http://x/h.json", t=123),

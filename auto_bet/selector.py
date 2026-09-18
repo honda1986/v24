@@ -62,6 +62,41 @@ def _combos(race):
     return out
 
 
+def sources(day, cfg):
+    """(種別, そのレース一覧) の組。買わない側は入れない"""
+    out = []
+    if not isinstance(day, dict):
+        return out
+    if cfg.buy_obi and isinstance(day.get("picks"), list):
+        out.append((KIND_OBI, day["picks"]))
+    if cfg.buy_ana and isinstance(day.get("ana"), list):   # ana が無い日もある
+        out.append((KIND_ANA, day["ana"]))
+    return out
+
+
+def summary(day, cfg, at):
+    """いま何を見ているかの一行ぶん。動いていることが分かるように
+
+    (帯の件数, 穴の件数, 次に締め切られるレースの説明) を返す
+    """
+    counts = {KIND_OBI: 0, KIND_ANA: 0}
+    date = day.get("date") if isinstance(day, dict) else None
+    nxt = None
+    for kind, races in sources(day, cfg):
+        counts[kind] = len(races)
+        for race in races:
+            if not isinstance(race, dict):
+                continue
+            m = minutes_to_close(date, race.get("close"), at)
+            if m is None or m < 0:
+                continue
+            if nxt is None or m < nxt[0]:
+                place = race.get("place") or PLACES.get(race.get("jcd")) or "?"
+                nxt = (m, f"次は {place}{race.get('rno')}R {kind} "
+                          f"締切{race.get('close')}（あと{m:.0f}分）")
+    return counts[KIND_OBI], counts[KIND_ANA], (nxt[1] if nxt else "このあとの予定は無し")
+
+
 def select(day, done_keys, spent_yen, cfg, at):
     """今この瞬間に投票すべき組を、締切が近い順に返す
 
@@ -78,17 +113,9 @@ def select(day, done_keys, spent_yen, cfg, at):
     if not isinstance(date, str) or not date:
         return Result([], warnings)
 
-    sources = []
-    if cfg.buy_obi:
-        sources.append((KIND_OBI, day.get("picks") or []))
-    if cfg.buy_ana:
-        sources.append((KIND_ANA, day.get("ana") or []))   # ana が無い日もある
-
     cands = []
     seen = set()
-    for kind, races in sources:
-        if not isinstance(races, list):
-            continue
+    for kind, races in sources(day, cfg):
         for race in races:
             if not isinstance(race, dict):
                 continue

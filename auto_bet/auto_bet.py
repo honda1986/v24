@@ -76,6 +76,13 @@ class Runner:
 
         for w in res.warnings:
             self.log.event("見送った", w)
+
+        # 何も無い周でも1行は出す。黙っていると、止まっているのか
+        # 買い目が無いのか分からない
+        n_obi, n_ana, nxt = selector.summary(day, self.cfg, at)
+        kinds = f"帯{n_obi}" + (f"・穴{n_ana}" if self.cfg.buy_ana else "")
+        self.log.event("見た", f"今日 {kinds} レース / いま投票できる組 "
+                               f"{len(res.bets)}件 / {nxt}")
         if not res.bets:
             return "ok"
 
