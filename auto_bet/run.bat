@@ -11,5 +11,14 @@ chcp 65001 > nul
 cd /d "%~dp0"
 python auto_bet.py --mode %MODE%
 echo.
-echo 終了しました。
+if errorlevel 4 (
+  echo ★投票を押した後で分からなくなったので止まりました。
+  echo    テレボートの投票履歴を見て、通っているか確認してください。
+) else if errorlevel 3 (
+  echo ★bet_done.json が壊れています。直すまで動かさないでください。
+) else if errorlevel 2 (
+  echo ★設定か準備が足りません。上のメッセージを見てください。
+) else (
+  echo 終了しました。
+)
 pause

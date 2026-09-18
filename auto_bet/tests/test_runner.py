@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import auto_bet                      # noqa: E402
 import betlog                        # noqa: E402
 import config as config_mod          # noqa: E402
+import telebote_page                 # noqa: E402
 from bet_store import BetStore       # noqa: E402
 from jst import JST                  # noqa: E402
 from tests.test_parts import DATE, NOW, day, race   # noqa: E402
@@ -22,15 +23,16 @@ from tests.test_parts import DATE, NOW, day, race   # noqa: E402
 class FakeBetter:
     """偽のページ。呼ばれた回数と、押したかどうかだけ覚える"""
 
-    def __init__(self, pressed=True, raise_on=None):
+    def __init__(self, pressed=True, raise_on=None, error=RuntimeError):
         self.calls = []
         self.pressed = pressed
         self.raise_on = raise_on
+        self.error = error
 
     def __call__(self, b, yen, live):
         self.calls.append((b.key, yen, live))
         if self.raise_on and self.raise_on in b.key:
-            raise RuntimeError("画面が想定と違います")
+            raise self.error("画面が想定と違います")
         return self.pressed and live
 
 
@@ -150,6 +152,40 @@ class TestCycle(Base):
         self.assertEqual(self.store.spent_on(DATE), 200)
         r.cycle()
         self.assertEqual(len(fake.calls), 2)              # 翌周も増えない
+
+    def test_押した後で失敗したら投票済みとして記録し止まる(self):
+        # 次の周で「まだ買っていない」と見なして買い直すのがいちばん危ない
+        fake = FakeBetter(raise_on="-24-", error=telebote_page.BetUncertain)
+        r = self.runner("live", [day([race()])], bet_fn=fake)
+        self.assertEqual(r.cycle(), "halt")
+        self.assertIn("20260918-24-9-2-1-4-帯", self.store.keys())
+        self.assertIn("要確認", self.store.bets["20260918-24-9-2-1-4-帯"]["note"])
+        r.cycle()
+        self.assertEqual(len(fake.calls), 1)          # 次の周で買い直さない
+
+    def test_haltのときは終了コード4で止まる(self):
+        self.store = BetStore(os.path.join(self.dir, "another.json"))
+        fake = FakeBetter(raise_on="-24-", error=telebote_page.BetUncertain)
+        r = self.runner("live", [day([race()])], bet_fn=fake)
+        self.assertEqual(r.loop(), 4)
+
+    def test_記録できなければ押した後でも止まる(self):
+        fake = FakeBetter()
+        r = self.runner("live", [day([race()])], bet_fn=fake)
+        def boom(*a, **k):
+            raise OSError("書けません")
+        r.store.record = boom
+        self.assertEqual(r.cycle(), "halt")
+
+    def test_押す直前に締切が近づいていたら見送る(self):
+        # 選んだ時点では10分前。そのあと画面操作で手間取って2分前になった、の想定
+        times = [NOW, datetime(2026, 9, 18, 14, 58, tzinfo=JST)]
+        fake = FakeBetter()
+        r = self.runner("live", [day([race(close="15:00")])], bet_fn=fake)
+        r.now_fn = lambda: times.pop(0) if len(times) > 1 else times[0]
+        r.cycle()
+        self.assertEqual(fake.calls, [])
+        self.assertEqual(self.store.keys(), set())
 
     def test_ログが1行1イベントで残る(self):
         r = self.runner("live", [day([race()])], bet_fn=FakeBetter())

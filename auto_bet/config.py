@@ -139,6 +139,8 @@ def from_dict(d, base_dir="."):
         shot_dir=_as_str(d, "shot_dir", required=True),
         stop_file=_as_str(d, "stop_file", required=True),
     )
+    if cfg.bet_yen % 100:
+        raise ConfigError(f"bet_yen は100円単位にしてください（いまは {cfg.bet_yen}）")
     if cfg.close_min_minutes >= cfg.close_max_minutes:
         raise ConfigError(
             f"close_min_minutes ({cfg.close_min_minutes}) は "

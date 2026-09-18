@@ -25,8 +25,8 @@ import config as config_mod         # noqa: E402
 import history_source               # noqa: E402
 import selector                     # noqa: E402
 import telebote_page                # noqa: E402
-from bet_store import BetDoneCorrupt, BetStore   # noqa: E402
-from jst import date_str, now                    # noqa: E402
+from bet_store import BetDoneCorrupt, BetStore       # noqa: E402
+from jst import date_str, minutes_to_close, now      # noqa: E402
 
 MODES = ("login", "check", "dry", "live")
 
@@ -90,8 +90,21 @@ class Runner:
             if self.mode == "dry" and b.key in self._dry_seen:
                 continue            # dry は同じ組を何周も繰り返さない
 
+            # 念のためもう一度見る。選んでから押すまでの間に時間が経っている
+            if self.store.has(b.key):
+                continue
+            left = minutes_to_close(b.date, b.close, self.now_fn())
+            if left is None or left < self.cfg.close_min_minutes:
+                self.log.bet(b, "見送った",
+                             f"押す前に締切が近づいた（あと{left:.1f}分）"
+                             if left is not None else "締切が読めない")
+                continue
+
             try:
                 pressed = self.bet_fn(b, b.yen, self.mode == "live")
+            except telebote_page.BetUncertain as e:
+                # 押した後で転んだ。通ったか分からないので、押していない扱いにしない
+                return self._uncertain(b, e)
             except Exception as e:
                 # 画面が中途半端なまま次のレースへ進むと、違うレースに投票する事故になる
                 self.log.bet(b, "失敗", f"{type(e).__name__}: {e} ★手で確認してください")
@@ -107,11 +120,30 @@ class Runner:
                 continue
 
             # 押せたら、その場で即書く。まとめて最後に書かない
-            self.store.record(b, self.mode)
+            try:
+                self.store.record(b, self.mode)
+            except Exception as e:
+                self.log.bet(b, "失敗", f"投票は通りましたが記録できません（{e}）。"
+                                        "★手で確認してください。止めます")
+                return "halt"
             spent += b.yen
             self.log.bet(b, "投票した", f"当日計 {spent}円")
 
         return "ok"
+
+    def _uncertain(self, b, e):
+        """押した後で失敗したとき。投票済みとして記録し、動作を止める
+
+        次の周で「まだ買っていない」と見なして買い直すのがいちばん危ない。
+        買えていなかった場合は1点買い逃すだけで済む。
+        """
+        try:
+            self.store.record(b, self.mode, note=f"要確認（{e}）")
+            note = "投票済みとして記録しました"
+        except Exception as e2:
+            note = f"★記録もできませんでした（{e2}）。次に動かす前に bet_done.json を直すこと"
+        self.log.bet(b, "失敗", f"{e} ★手で確認してください（{note}）。止めます")
+        return "halt"
 
     def loop(self, once=False):
         self.log.event("開始", f"{self.mode} / {self.cfg.poll_seconds}秒おき / "
@@ -121,6 +153,10 @@ class Runner:
             if state == "stop":
                 self.log.event("終了", f"{self.stop_path} があるので止めます")
                 return 0
+            if state == "halt":
+                self.log.event("終了", "★投票の結果が分からないので止めました。"
+                                       "テレボートの投票履歴を見て確認してください")
+                return 4
             if state == "abort":
                 self.log.event("打ち切り", "この周は途中で止めました。次の周へ")
             if once:
@@ -195,10 +231,31 @@ def main(argv=None):
         print("空で続けると二重投票になります。中身を直すか、退避してから動かしてください。")
         return 3
 
-    try:
-        if args.mode == "check":
+    if args.mode == "check":
+        try:
             return Runner(cfg, store, args.mode, log).loop(once=args.once)
+        except KeyboardInterrupt:
+            log.event("終了", "Ctrl+C")
+            return 0
+
+    # dry / live は画面を触る。足りないものは動く前に言う
+    if not cfg.telebote_url:
+        print("config.json の telebote_url が空です。テレボートのURLを入れてください。")
+        return 2
+    missing = telebote_page.missing_selectors()
+    if missing:
+        print("telebote_page.py の SELECTORS がまだ空です: " + " / ".join(missing))
+        print("  playwright codegen --channel=chrome " + cfg.telebote_url)
+        print("で実際に1点買ってみて、出てきたコードから写してください。")
+        return 2
+
+    try:
         with browser.open_context(cfg) as (_ctx, page):
+            telebote_page.open_top(page, cfg.telebote_url)   # ここを起点にする
+            if telebote_page.check_logged_in(page) is False:
+                print("ログインが切れているようです。--mode login をやり直してください。")
+                log.event("終了", "ログインが切れている")
+                return 2
             runner = Runner(cfg, store, args.mode, log, bet_fn=make_bet_fn(cfg, page))
             return runner.loop(once=args.once)
     except browser.BrowserUnavailable as e:

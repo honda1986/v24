@@ -257,6 +257,10 @@ class TestConfig(unittest.TestCase):
         c = config_mod.from_dict({"_1_必ず読むこと": ["…"], "buy_obi": True})
         self.assertEqual(c.unknown_keys, [])
 
+    def test_1点の金額は100円単位(self):
+        with self.assertRaises(config_mod.ConfigError):
+            cfg(bet_yen=150)
+
     def test_1日の上限が1点ぶんに満たなければ止まる(self):
         with self.assertRaises(config_mod.ConfigError):
             cfg(bet_yen=100, max_yen_per_day=50)
