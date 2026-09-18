@@ -1,24 +1,35 @@
 @echo off
-rem v24 自動投票。ダブルクリックで起動する用。
-rem 既定は check（見るだけ）。dry / live にするときは下の MODE を書き換える。
-rem   login … 手でログインする（最初の1回と、セッションが切れたとき）
-rem   check … ブラウザを開かず、いま買うべきレースを並べるだけ
-rem   dry   … ブラウザを開き、確認画面まで進んで押さない
-rem   live  … 実際に投票する（config.json の i_have_read_the_terms が true のときだけ）
+rem --------------------------------------------------------------------
+rem  v24 auto_bet launcher
+rem  ASCII only. cmd.exe cannot read UTF-8 Japanese in .bat files.
+rem
+rem  MODE:
+rem    login ... open Chrome and wait for manual login
+rem    check ... list races to bet. no browser, no betting
+rem    dry   ... open Chrome, stop at the confirm screen, press nothing
+rem    live  ... place real bets (needs i_have_read_the_terms = true)
+rem --------------------------------------------------------------------
 set MODE=check
 
 chcp 65001 > nul
+set PYTHONUTF8=1
 cd /d "%~dp0"
+
 python auto_bet.py --mode %MODE%
+set CODE=%ERRORLEVEL%
 echo.
-if errorlevel 4 (
-  echo ★投票を押した後で分からなくなったので止まりました。
-  echo    テレボートの投票履歴を見て、通っているか確認してください。
-) else if errorlevel 3 (
-  echo ★bet_done.json が壊れています。直すまで動かさないでください。
-) else if errorlevel 2 (
-  echo ★設定か準備が足りません。上のメッセージを見てください。
+
+if "%CODE%"=="4" (
+  echo [!] Stopped: a bet was pressed but the result is unknown.
+  echo     Check your TELEBOAT bet history before running again.
+) else if "%CODE%"=="3" (
+  echo [!] bet_done.json is broken. Fix it before running again.
+) else if "%CODE%"=="2" (
+  echo [!] Setup is incomplete. See the message above.
+) else if "%CODE%"=="9009" (
+  echo [!] Python not found. Install it from python.org
+  echo     and tick "Add python.exe to PATH".
 ) else (
-  echo 終了しました。
+  echo Finished. (exit code %CODE%)
 )
 pause
