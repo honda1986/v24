@@ -41,13 +41,17 @@ SELECTORS = {
     "lane1": "#bet1-{d}",
     "lane2": "#bet2-{d}",
     "lane3": "#bet3-{d}",
-    "amount": "role=textbox",              # 口数（1口 = 100円）
+    # 口数（1口 = 100円）。|| でどれか。見えている入力欄を順に試す
+    "amount": "role=textbox || input[type=text] || input[type=number] "
+              "|| input:not([type=hidden])",
     "add_to_slip": "text=ベットリストに追加して投票へ進む",
     "to_confirm": "role=button[name=\"次へ\"]",
     "confirm_mark": "text=投票はまだ完了していません",   # 確認画面に着いた印
     "confirm_area": "table",               # 照合に使う範囲。買い目の表だけを見る
     "confirm_area_fallback": "body",       # 表が取れないときは画面全体で見る
-    "total_amount": "role=textbox",        # 確認画面で打ち直す合計金額
+    # 確認画面で打ち直す合計金額
+    "total_amount": "role=textbox || input[type=text] || input[type=number] "
+                    "|| input:not([type=hidden])",
     "submit": "role=button[name=\"投票\"]",
     "done_mark": "text=場を変更して投票",   # 投票完了の印
     # ★ログイン後のトップ。生存確認も投票後の後始末も、必ずここへ戻る。
@@ -191,9 +195,39 @@ class TelebotePage:
                 continue
         return False
 
-    def _fill(self, selector, value):
-        self.page.wait_for_selector(selector, timeout=TIMEOUT_MS)
-        self.page.fill(selector, str(value))
+    def _fill(self, selector, value, what="入力欄"):
+        """値を入れて、本当に入ったかを読み返す
+
+        テレボートの金額欄は、クリックしてからでないと受け付けないことがある
+        （採取の記録も click() → fill() の順だった）。fill が効かない作りなら
+        1文字ずつ打つところまで落とす。入っていなければ止める。
+        """
+        want = str(value)
+        tried = []
+        for one in [x.strip() for x in selector.split("||") if x.strip()]:
+            try:
+                self.page.wait_for_selector(one, timeout=5000)
+            except Exception as e:
+                tried.append(f"{one}: 出てこない")
+                continue
+            boxes = self.page.locator(one)
+            for i in range(min(boxes.count(), 4)):      # 見えている順に試す
+                el = boxes.nth(i)
+                try:
+                    if not el.is_visible():
+                        continue
+                    el.click(timeout=2000)
+                    el.fill(want, timeout=2000)
+                    if (el.input_value() or "").strip() == want:
+                        return
+                    el.fill("")                          # 効かなければ1文字ずつ
+                    el.type(want, delay=50)
+                    if (el.input_value() or "").strip() == want:
+                        return
+                    tried.append(f"{one}[{i}]: {el.input_value()!r} になった")
+                except Exception as e:
+                    tried.append(f"{one}[{i}]: {type(e).__name__}")
+        raise BetAborted(f"{what}に {want} を入れられません（" + " / ".join(tried) + "）")
 
     def _set_lane(self, selector, verify=True):
         """チェックを入れる
@@ -386,7 +420,7 @@ class TelebotePage:
 
     def enter_amount(self, yen):
         """口数（または金額）を入れて、投票へ進む"""
-        self._fill(_sel("amount"), units_of(yen))
+        self._fill(_sel("amount"), units_of(yen), "口数の欄")
         add = (SELECTORS.get("add_to_slip") or "").strip()
         if add:
             self._click(add)
@@ -418,7 +452,7 @@ class TelebotePage:
         """
         total = (SELECTORS.get("total_amount") or "").strip()
         if total:
-            self._fill(total, yen)
+            self._fill(total, yen, "合計金額の欄")
 
     def submit(self):
         """確定を押す。押した後で転んだら BetUncertain"""
@@ -476,8 +510,12 @@ class TelebotePage:
             self._safe_reset()
             raise BetAborted("確認画面が意図と一致しません: " + " / ".join(ng))
 
-        self.fill_total(yen)      # 合計金額まで入れる。押すのはこの次
-        self._shot(b, "confirm")  # live が押す直前と同じ画面を残す
+        try:
+            self.fill_total(yen)   # 合計金額まで入れる。押すのはこの次
+        except Exception:
+            self.dump(b, "合計金額")
+            raise
+        self._shot(b, "confirm")   # live が押す直前と同じ画面を残す
 
         if not live:
             self._safe_reset()    # dry はここまで。押さない
