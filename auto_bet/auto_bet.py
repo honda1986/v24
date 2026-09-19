@@ -16,6 +16,7 @@ import argparse
 import os
 import sys
 import time
+from datetime import timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -37,6 +38,46 @@ config.json の i_have_read_the_terms が false のままです。
 自動操作の扱いはそこに書かれています。読んで、問題ないと自分で判断したときだけ
 true にしてください。判断できないなら false のままで構いません。
 dry モードなら、投票を押す直前まで全部動きます。"""
+
+
+FAKE_MINUTES = 10          # 疑似の買い目の締切を、いまから何分後にするか
+
+
+def fake_history(spec, at):
+    """疑似の買い目を1件だけ作る。画面操作を試すためだけのもの
+
+      --fake 17-3          宮島3R、組は 1-2-3
+      --fake 宮島-3        同じ
+      --fake 宮島-3-2-1-4  組も指定する
+
+    締切はいまから10分後にするので、そのまま「買うべき」に入る。
+    """
+    parts = [p.strip() for p in str(spec).split("-") if p.strip()]
+    if len(parts) < 2:
+        raise ValueError("--fake は 場-レース番号 の形で書いてください（例 17-3 / 宮島-3）")
+
+    name_to_jcd = {v: k for k, v in selector.PLACES.items()}
+    head = parts[0]
+    jcd = int(head) if head.isdigit() else name_to_jcd.get(head)
+    if jcd not in selector.PLACES:
+        raise ValueError(f"場が分かりません: {head}")
+
+    if not parts[1].isdigit() or not (1 <= int(parts[1]) <= 12):
+        raise ValueError(f"レース番号が変です: {parts[1]}")
+    rno = int(parts[1])
+
+    combo = "-".join(parts[2:]) if len(parts) > 2 else "1-2-3"
+    lanes = combo.split("-")
+    if len(lanes) != 3 or len(set(lanes)) != 3 or not all(x in "123456" for x in lanes):
+        raise ValueError(f"組が変です: {combo}（1〜6 の重複しない3つ）")
+
+    close = (at + timedelta(minutes=FAKE_MINUTES)).strftime("%H:%M")
+    return {"days": [{
+        "date": date_str(at),
+        "picks": [{"jcd": jcd, "place": selector.PLACES[jcd], "rno": rno,
+                   "close": close, "buys": [{"combo": combo}], "cost": 100}],
+        "ana": [],
+    }]}
 
 
 class Runner:
@@ -285,6 +326,8 @@ def main(argv=None):
     ap.add_argument("--config", default=os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "config.json"))
     ap.add_argument("--once", action="store_true", help="1周だけ動かして終わる")
+    ap.add_argument("--fake", metavar="場-R[-組]",
+                    help="疑似の買い目で画面操作を試す（dry / check だけ。例 17-3 や 宮島-3-2-1-4）")
     args = ap.parse_args(argv)
 
     try:
@@ -294,6 +337,12 @@ def main(argv=None):
         return 2
     for k in cfg.unknown_keys:
         print(f"（config.json の {k} は使っていません）")
+
+    if args.fake and args.mode == "live":
+        print("--fake は live では使えません。")
+        print("疑似の買い目は v24 が選んだものではないので、実際のお金は使いません。")
+        print("画面操作を試すなら --mode dry で。")
+        return 2
 
     if args.mode == "live" and not cfg.i_have_read_the_terms:
         print(TERMS_NG)
@@ -316,9 +365,21 @@ def main(argv=None):
         print("空で続けると二重投票になります。中身を直すか、退避してから動かしてください。")
         return 3
 
+    fetch_fn = None
+    if args.fake:
+        try:
+            fake_history(args.fake, now())       # 形を先に確かめる
+        except ValueError as e:
+            print(e)
+            return 2
+        print(f"★疑似の買い目で動かします（{args.fake}／締切は{FAKE_MINUTES}分後）。"
+              "history.json は見ません")
+        log.event("開始", f"★疑似の買い目 {args.fake}")
+        fetch_fn = lambda url: (fake_history(args.fake, now()), "")   # noqa: E731
+
     if args.mode == "check":
         try:
-            return Runner(cfg, store, args.mode, log).loop(once=args.once)
+            return Runner(cfg, store, args.mode, log, fetch_fn=fetch_fn).loop(once=args.once)
         except KeyboardInterrupt:
             log.event("終了", "Ctrl+C")
             return 0
@@ -347,7 +408,8 @@ def main(argv=None):
             telebote_page.open_home(page)   # ログイン後のトップを起点にする
             runner = Runner(cfg, store, args.mode, log,
                             bet_fn=make_bet_fn(cfg, page),
-                            keepalive_fn=make_keepalive_fn(cfg, page, log))
+                            keepalive_fn=make_keepalive_fn(cfg, page, log),
+                            fetch_fn=fetch_fn)
             return runner.loop(once=args.once)
     except browser.BrowserUnavailable as e:
         print(e)

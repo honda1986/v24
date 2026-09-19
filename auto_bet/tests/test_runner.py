@@ -296,6 +296,40 @@ class TestEnsureLogin(Base):
         self.assertFalse(auto_bet.ensure_logged_in(self.cfg, object()))
 
 
+class TestFake(Base):
+    """疑似の買い目。画面操作を試すためだけのもの"""
+
+    def test_場コードでもレース場名でも作れる(self):
+        for spec in ("17-3", "宮島-3"):
+            p = auto_bet.fake_history(spec, NOW)["days"][0]["picks"][0]
+            self.assertEqual((p["jcd"], p["place"], p["rno"]), (17, "宮島", 3))
+
+    def test_締切は少し先になる(self):
+        p = auto_bet.fake_history("17-3", NOW)["days"][0]["picks"][0]
+        self.assertEqual(p["close"], "15:00")      # NOW は 14:50
+
+    def test_そのまま買うべきに入る(self):
+        h = auto_bet.fake_history("17-3", NOW)
+        log = betlog.Log(self.cfg.path("log_path"), "check", echo=False)
+        r = auto_bet.Runner(self.cfg, self.store, "check", log,
+                            fetch_fn=lambda url: (h, ""), now_fn=lambda: NOW)
+        self.assertEqual(r.cycle(), "ok")
+
+    def test_組も指定できる(self):
+        p = auto_bet.fake_history("宮島-3-2-1-4", NOW)["days"][0]["picks"][0]
+        self.assertEqual(p["buys"][0]["combo"], "2-1-4")
+
+    def test_おかしな指定は弾く(self):
+        for bad in ("17", "99-3", "17-13", "17-3-1-1-2", "宮島-3-7-1-2", "-"):
+            with self.assertRaises(ValueError, msg=bad):
+                auto_bet.fake_history(bad, NOW)
+
+    def test_liveでは使えない(self):
+        code = auto_bet.main(["--mode", "live", "--fake", "17-3",
+                              "--config", self.cfg_path, "--once"])
+        self.assertEqual(code, 2)
+
+
 class TestSettings(Base):
     """config.json をメニューで書き換える"""
 
