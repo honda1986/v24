@@ -29,7 +29,9 @@ SELECTORS = {
     #   URL は場を選んだ後でだけ使う
     "race_url": "https://bu.tbbr.jp/bet?hatsubaiKbn=0&jyoCode={jcd:02d}&raceNo={rno:02d}",
     "place_link": "text={place}",          # トップの場のカード
-    "race_chooser": "text=/^[0-9]+R\\s/",  # 場の画面で、レース選択を開くところ（例「4R 9:50」）
+    # 場の画面で、レース選択を開くところ（例「4R 9:50」）。|| でどれか1つ
+    "race_chooser": ("button >> text=/^[0-9]+R\\s/ || text=/^[0-9]+R\\s+[0-9]+:/ "
+                     "|| role=button[name=\"レース選択\"]"),
     "race_in_modal": "[data-testid=modal] >> text=/^{rno}R/",   # その中の、買いたいレース
     "bet_page_mark": "[id^='bet1-']",      # 舟券の画面に着いた印（着順のチェックボックス）
     # 勝式を3連単にする。押すところ → 出てくる中から選ぶところ
@@ -167,9 +169,19 @@ class TelebotePage:
         self.top_url = top_url
 
     # ---- 部品 ------------------------------------------------------------
-    def _click(self, selector):
-        self.page.wait_for_selector(selector, timeout=TIMEOUT_MS)
+    def _click(self, selector, timeout=TIMEOUT_MS):
+        self.page.wait_for_selector(selector, timeout=timeout)
         self.page.click(selector)
+
+    def _click_any(self, selector, timeout=5000):
+        """|| で区切った候補を順に試す。どれも押せなければ False"""
+        for one in [x.strip() for x in selector.split("||") if x.strip()]:
+            try:
+                self._click(one, timeout=timeout)
+                return True
+            except Exception:
+                continue
+        return False
 
     def _fill(self, selector, value):
         self.page.wait_for_selector(selector, timeout=TIMEOUT_MS)
@@ -228,10 +240,10 @@ class TelebotePage:
         for how in (self._by_modal, self._by_place_then_url, self._by_url):
             try:
                 how(b)
-                if self.on_bet_page():
+                if self.on_bet_page() and self._is_race(b):
                     print(f"   （{b.place}{b.rno}R は {how.__name__} で開きました）")
                     return how.__name__
-                tried.append(f"{how.__name__}: 舟券の画面に着かなかった（{self.page.url}）")
+                tried.append(f"{how.__name__}: 目当ての画面に着かなかった（{self.page.url}）")
             except Exception as e:
                 tried.append(f"{how.__name__}: {type(e).__name__}: {e}")
             self.dump(b, how.__name__)   # 何が出ていたかを残す
@@ -265,14 +277,23 @@ class TelebotePage:
             return                      # 場を選んだだけで目当てのレースだった
         chooser = (SELECTORS.get("race_chooser") or "").strip()
         if chooser:
-            try:
-                self._click(chooser)
-            except Exception:
-                pass                    # すでにレース選択が出ていることもある
+            self._click_any(chooser)    # 押せなくても、すでに出ていることがある
         self._set_lane(_sel("race_in_modal", rno=b.rno))
+        self.page.wait_for_timeout(1000)    # サイト側の遷移を待つ
 
     def _is_race(self, b):
-        """いま開いている画面が、目当てのレースかどうか"""
+        """いま開いている画面が、目当てのレースかどうか
+
+        URL に raceNo が入っているので、まずそれで見る。
+        無ければ画面の文字で見る（こちらは当てにならないので控え）。
+        """
+        url = self.page.url or ""
+        m = re.search(r"raceNo=0*([0-9]+)", url)
+        if m:
+            j = re.search(r"jyoCode=0*([0-9]+)", url)
+            if j and int(j.group(1)) != b.jcd:
+                return False
+            return int(m.group(1)) == b.rno
         try:
             return bool(re.search(rf"(?<![0-9]){b.rno}R", tight(self.page.inner_text("body"))))
         except Exception:

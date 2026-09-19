@@ -291,6 +291,36 @@ class TestConfig(unittest.TestCase):
             cfg(bet_yen=100, max_yen_per_day=50)
 
 
+class TestIsRace(unittest.TestCase):
+    """URL を見て、目当てのレースに着いたかどうか"""
+
+    class FakePage:
+        def __init__(self, url):
+            self.url = url
+
+    def is_race(self, url, jcd=17, rno=3):
+        page = telebote_page.TelebotePage(self.FakePage(url))
+        b = selector.Bet(date=DATE, jcd=jcd, place="宮島", rno=rno, kind="帯",
+                         close="15:00", combo="1-2-3", yen=100, points=1,
+                         minutes=10.0, key="k")
+        return page._is_race(b)
+
+    def test_合っていれば真(self):
+        self.assertTrue(self.is_race("https://bu.tbbr.jp/bet?hatsubaiKbn=0&jyoCode=17&raceNo=03"))
+
+    def test_レース番号が違えば偽(self):
+        self.assertFalse(self.is_race("https://bu.tbbr.jp/bet?hatsubaiKbn=0&jyoCode=17&raceNo=04"))
+
+    def test_場が違えば偽(self):
+        self.assertFalse(self.is_race("https://bu.tbbr.jp/bet?hatsubaiKbn=0&jyoCode=14&raceNo=03"))
+
+    def test_トップへ戻されたら偽(self):
+        self.assertFalse(self.is_race("https://bu.tbbr.jp/top?hatsubaiKbn=0"))
+
+    def test_0詰めでなくても読める(self):
+        self.assertTrue(self.is_race("https://bu.tbbr.jp/bet?jyoCode=17&raceNo=3"))
+
+
 class TestConfirmVerify(unittest.TestCase):
     """確認画面の照合。ここが最後の砦
 
