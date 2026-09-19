@@ -18,7 +18,7 @@ DEFAULTS = {
     "max_points_per_race": 4,
     "buy_obi": True,
     "buy_ana": False,
-    "close_min_minutes": 3,
+    "close_min_minutes": 0,
     "close_max_minutes": 25,
     "history_url": "https://raw.githubusercontent.com/honda1986/v24/main/history.json",
     "poll_seconds": 120,
@@ -47,7 +47,7 @@ class Config:
     max_points_per_race: "int | None" = 4
     buy_obi: bool = True
     buy_ana: bool = False
-    close_min_minutes: float = 3
+    close_min_minutes: float = 0
     close_max_minutes: float = 25
     history_url: str = DEFAULTS["history_url"]
     poll_seconds: int = 120
