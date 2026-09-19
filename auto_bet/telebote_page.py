@@ -29,10 +29,11 @@ SELECTORS = {
     #   URL は場を選んだ後でだけ使う
     "race_url": "https://bu.tbbr.jp/bet?hatsubaiKbn=0&jyoCode={jcd:02d}&raceNo={rno:02d}",
     "place_link": "text={place}",          # トップの場のカード
-    # 場の画面で、レース選択を開くところ（例「4R 9:50」）。|| でどれか1つ
-    "race_chooser": ("button >> text=/^[0-9]+R\\s/ || text=/^[0-9]+R\\s+[0-9]+:/ "
-                     "|| role=button[name=\"レース選択\"]"),
-    "race_in_modal": "[data-testid=modal] >> text=/^{rno}R/",   # その中の、買いたいレース
+    # 場の画面で、レース選択を開くところ。ボタンの名前は「4R 12:47」のように
+    # そのときの対象レースで変わるので、名前は下の正規表現で拾う。ここは控え
+    "race_chooser": "text=/^[0-9]+R\\s+[0-9]+:/ || role=button[name=\"レース選択\"]",
+    # レース一覧の中の、買いたいレース。名前は「4R 予選 12:47」のような形
+    "race_in_modal": "[data-testid=modal] >> text=/^{rno}R/",   # 控え
     "bet_page_mark": "[id^='bet1-']",      # 舟券の画面に着いた印（着順のチェックボックス）
     # 勝式を3連単にする。押すところ → 出てくる中から選ぶところ
     "bet_type_open": "role=button[name=\"連単\"]",
@@ -61,6 +62,10 @@ SELECTORS = {
     # ログイン済みのときだけ出るもの。|| で区切ると、どれか1つ出ていれば良い
     "logged_in_mark": "text=マイページ || text=購入残高 || text=ログアウト",
 }
+
+# レース選択まわり。名前が毎回変わるので、正規表現で拾う
+RACE_BUTTON = r"^[0-9]+R\s"        # 場の画面の「4R 12:47」
+RACE_IN_LIST = r"^{rno}R(\D|$)"    # 一覧の「4R 予選 12:47」
 
 # 確認画面の合計欄の書き方。ここが変わったら直す
 TOTAL_BETS = "合計ベット数{n}ベット"
@@ -275,11 +280,33 @@ class TelebotePage:
         self._click(_sel("place_link", jcd=b.jcd, place=b.place))
         if self.on_bet_page(timeout=3000) and self._is_race(b):
             return                      # 場を選んだだけで目当てのレースだった
-        chooser = (SELECTORS.get("race_chooser") or "").strip()
-        if chooser:
-            self._click_any(chooser)    # 押せなくても、すでに出ていることがある
-        self._set_lane(_sel("race_in_modal", rno=b.rno))
+        self._open_chooser()
+        self._pick_race(b)
         self.page.wait_for_timeout(1000)    # サイト側の遷移を待つ
+
+    def _open_chooser(self):
+        """レース選択を開く。ボタンの名前は「4R 12:47」のように毎回変わる"""
+        try:
+            self.page.get_by_role(
+                "button", name=re.compile(RACE_BUTTON)).first.click(timeout=5000)
+            return True
+        except Exception:
+            return self._click_any((SELECTORS.get("race_chooser") or "").strip())
+
+    def _pick_race(self, b):
+        """一覧から目当てのレースを選ぶ
+
+        一覧はチェックボックスで、いま対象のレースは最初から入っている。
+        押して切り替えるのではなく check で入れる（入っていれば何もしない）。
+        """
+        try:
+            self.page.get_by_role(
+                "checkbox", name=re.compile(RACE_IN_LIST.format(rno=b.rno))
+            ).first.check(timeout=5000)
+            return
+        except Exception:
+            pass
+        self._set_lane(_sel("race_in_modal", rno=b.rno))
 
     def _is_race(self, b):
         """いま開いている画面が、目当てのレースかどうか
