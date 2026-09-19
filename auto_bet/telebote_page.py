@@ -463,18 +463,30 @@ class TelebotePage:
 
     def enter_amount(self, yen):
         """口数（または金額）を入れて、ベットリストに入れる"""
-        before = slip_left(self.page)
         self._fill(_sel("amount"), units_of(yen), "口数の欄")
         add = (SELECTORS.get("add_to_slip") or "").strip()
         if add:
             self._click(add)
-            self.page.wait_for_timeout(800)
-            after = slip_left(self.page)
-            # 入っていないまま先へ進むと、確認画面に何も載らない
-            if before is not None and after is not None and after <= before:
-                raise BetAborted(
-                    f"ベットリストに入りませんでした（{before}件のまま）。"
-                    "組か口数が受け付けられていないかもしれません")
+            self.settle()
+            # ベットリスト画面に着いたか（「次へ」が出ているか）
+            try:
+                self.page.wait_for_selector(_sel("to_confirm"), timeout=TIMEOUT_MS)
+            except Exception:
+                raise BetAborted("ベットリストの画面に進めませんでした")
+
+    def check_slip(self, b, yen):
+        """ベットリスト画面の中身を照合する
+
+        確認画面の1つ手前。ここで見ておけば、買い残りが混ざっていることにも、
+        入っていないことにも、進む前に気づける。
+        """
+        text = self.page.inner_text("body")
+        units = units_of(yen) if AMOUNT_IN_UNITS else None
+        ng = verify_text(text, b.place, b.rno, b.combo, yen, units)
+        if ng:
+            self.dump(b, "ベットリスト")
+            raise BetAborted("ベットリストが意図と一致しません: " + " / ".join(ng)
+                             + f"｜読んだ文字: {tight(text)[:120]}")
 
     def to_confirm(self):
         self._click(_sel("to_confirm"))
@@ -556,7 +568,8 @@ class TelebotePage:
         例外は握りつぶさない。呼び出し側がその周を打ち切る。
         """
         # ★先にベットリストを空にしておくこと。残っていると、追加しても
-        #   確認画面に載らない（合計ベット数が空・合計金額0円になる）
+        #   確認画面に載らない（合計ベット数が空・合計金額0円になる）。
+        #   ただしバッジは読めないことが多いので、読めたときだけ見る
         left = slip_left(self.page)
         if left:
             raise BetAborted(
@@ -567,6 +580,7 @@ class TelebotePage:
             self.open_race(b)
             self.enter_combo(b.combo)  # 勝式は触らない。3連単は最初から選ばれている
             self.enter_amount(yen)
+            self.check_slip(b, yen)    # 確認画面の手前で、ここでも照合する
             self.to_confirm()
         except Exception:
             self.dump(b, "途中で失敗")   # 何が出ていたかを残す
@@ -615,18 +629,23 @@ def bet(page, b, yen, live, shot_dir=None, top_url=""):
 def slip_left(page):
     """ベットリストに残っている件数。読めなければ None
 
-    1点ずつ買うので、投票の前はいつも空のはず。残っていると、
-    次の確認画面が「2ベット」になって照合で止まる。
+    ★ヘッダーの赤いバッジは画像か CSS の飾りで、文字としては読めない。
+      読めたときだけ使い、読めなければ None（＝分からない）を返すこと。
+      件数が 0 だと決めつけると、入っているのに「入らなかった」と誤判定する。
     """
     sel = (SELECTORS.get("slip_badge") or "").strip()
     if not sel:
         return None
+    best = None
     try:
-        text = page.locator(sel).first.inner_text(timeout=3000)
+        boxes = page.locator(sel)
+        for i in range(min(boxes.count(), 6)):
+            m = re.search(r"([0-9]+)", tight(boxes.nth(i).inner_text()))
+            if m:
+                best = max(best or 0, int(m.group(1)))
     except Exception:
         return None
-    m = re.search(r"([0-9]+)", tight(text))
-    return int(m.group(1)) if m else 0
+    return best
 
 
 def clear_slip(page):
