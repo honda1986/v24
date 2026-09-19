@@ -200,6 +200,7 @@ class TestCycle(Base):
     def test_買い目が無い時間が続いたら画面を開き直す(self):
         # テレボートは一定時間操作がないとログアウトさせられる
         touched = []
+        self.write_config(keepalive_minutes=10)
         r = self.runner("live", [day([race(close="18:00")])], bet_fn=FakeBetter())
         r.keepalive_fn = lambda: touched.append(1) or True
         times = [NOW, NOW + timedelta(minutes=5), NOW + timedelta(minutes=20)]
@@ -210,6 +211,14 @@ class TestCycle(Base):
         self.assertEqual(len(touched), 1)          # 5分後はまだ
         r.cycle()
         self.assertEqual(len(touched), 2)          # 10分以上あいたら開き直す
+
+    def test_keepalive_minutesが0なら何もしない(self):
+        touched = []
+        self.write_config(keepalive_minutes=0)
+        r = self.runner("live", [day([race(close="18:00")])], bet_fn=FakeBetter())
+        r.keepalive_fn = lambda: touched.append(1) or True
+        r.cycle()
+        self.assertEqual(touched, [])
 
     def test_ログインが切れていたら止まる(self):
         r = self.runner("live", [day([race(close="18:00")])], bet_fn=FakeBetter())

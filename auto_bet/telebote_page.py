@@ -49,6 +49,10 @@ SELECTORS = {
     #   入口（config.json の telebote_url）はログイン画面なので、
     #   そこへ戻るとログインが切れる
     "home_url": "https://bu.tbbr.jp/top?hatsubaiKbn=0",
+    # ログアウト避けに押すもの。開き直すより画面の中を動かすほうが安全
+    "keepalive_click": "text=開催情報更新",
+    # 投票が済んだ画面からトップへ戻るリンク
+    "back_to_top": "text=場を変更して投票",
     # ログイン済みのときだけ出るもの。|| で区切ると、どれか1つ出ていれば良い
     "logged_in_mark": "text=マイページ || text=購入残高 || text=ログアウト",
 }
@@ -259,11 +263,18 @@ class TelebotePage:
     def reset(self):
         """次のレースへ進む前に、ログイン後のトップへ戻す
 
-        入口のURL（ログイン画面）へ戻すとログインが切れるので、そこへは戻らない。
+        画面の中のリンクで戻るほうが、URLを開き直すよりログイン状態に触らない。
+        入口のURL（ログイン画面）へは戻さない。
         """
-        url = (SELECTORS.get("home_url") or "").strip()
-        if url:
-            self.page.goto(url, timeout=TIMEOUT_MS)
+        back = (SELECTORS.get("back_to_top") or "").strip()
+        if back:
+            try:
+                self.page.wait_for_selector(back, timeout=5000)
+                self.page.click(back)
+                return
+            except Exception:
+                pass
+        open_home(self.page)
 
     def _safe_reset(self):
         """投票が通った後の後始末。ここで転んでも投票の成否は変わらない"""
@@ -316,7 +327,7 @@ def open_top(page, url):
 
 
 def open_home(page):
-    """ログイン後のトップを開く。生存確認はこちらを使う
+    """ログイン後のトップを開く
 
     home_url が空なら、いまの画面を読み込み直すだけにする。
     """
@@ -325,6 +336,27 @@ def open_home(page):
         page.goto(url, timeout=TIMEOUT_MS)
     else:
         page.reload(timeout=TIMEOUT_MS)
+
+
+def keepalive(page):
+    """ログアウトされないように画面を動かす
+
+    「一定時間操作がない場合、自動的にログアウトします」と画面に出ている。
+    ページを開き直すよりも、トップの「開催情報更新」を押すほうが、
+    ログイン状態に触らずに「操作した」ことにできる。
+    押せる場所に居なければ、トップを開き直す。
+    """
+    sel = (SELECTORS.get("keepalive_click") or "").strip()
+    if sel:
+        try:
+            page.wait_for_selector(sel, timeout=5000)
+            page.click(sel)
+            page.wait_for_timeout(1000)
+            return "押した"
+        except Exception:
+            pass
+    open_home(page)
+    return "開き直した"
 
 
 def check_logged_in(page, timeout=5000):

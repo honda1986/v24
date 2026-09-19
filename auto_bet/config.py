@@ -22,7 +22,7 @@ DEFAULTS = {
     "close_max_minutes": 25,
     "history_url": "https://raw.githubusercontent.com/honda1986/v24/main/history.json",
     "poll_seconds": 120,
-    "keepalive_minutes": 10,
+    "keepalive_minutes": 5,
     "telebote_url": "",
     "profile_dir": "chrome_profile",
     "use_installed_chrome": True,
@@ -51,7 +51,7 @@ class Config:
     close_max_minutes: float = 25
     history_url: str = DEFAULTS["history_url"]
     poll_seconds: int = 120
-    keepalive_minutes: int = 10
+    keepalive_minutes: int = 5
     telebote_url: str = ""
     profile_dir: str = "chrome_profile"
     use_installed_chrome: bool = True

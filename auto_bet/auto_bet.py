@@ -236,8 +236,9 @@ def make_bet_fn(cfg, page):
 
 def make_keepalive_fn(cfg, page, log):
     def keepalive_fn():
-        telebote_page.open_home(page)       # ログイン画面へ戻すと切れる
+        how = telebote_page.keepalive(page)     # 「開催情報更新」を押す
         if telebote_page.check_logged_in(page) is not False:
+            log.event("見た", f"ログイン維持（{how}）")
             return True
         log.event("見送った", "★ログインが切れました。手でログインし直してください")
         return ensure_logged_in(cfg, page)
