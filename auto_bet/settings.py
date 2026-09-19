@@ -18,8 +18,17 @@ import config as config_mod    # noqa: E402
 PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 
 YEN, LIMIT_YEN, LIMIT_POINTS, YESNO, MINUTES = "yen", "limit_yen", "limit_pt", "yn", "min"
+TERMS = "terms"
+
+TERMS_NOTE = """
+  これは「テレボートの『電話投票に関する約定』を自分で読んで、
+  自動操作について問題ないと判断した」という、あなた自身の記録です。
+  約定は改定されます。長く使うなら、ときどき読み直してください。
+
+  false のままでも dry（投票を押す直前まで）は全部動きます。"""
 
 ITEMS = [
+    ("live を使う（約定を読んだ記録）", "i_have_read_the_terms", TERMS),
     ("1点あたりの金額", "bet_yen", YEN),
     ("1日の上限", "max_yen_per_day", LIMIT_YEN),
     ("1レースの上限点数", "max_points_per_race", LIMIT_POINTS),
@@ -52,6 +61,8 @@ def save_raw(d):
 
 def show(d, key, kind):
     v = d.get(key, config_mod.DEFAULTS.get(key))
+    if kind == TERMS:
+        return "使える" if v else "使えない（dry まで）"
     if kind == YESNO:
         return "はい" if v else "いいえ"
     if v is None:
@@ -65,6 +76,19 @@ def show(d, key, kind):
 
 def ask(label, kind, now):
     print(f"\n  {label}（いま {now}）")
+    if kind == TERMS:
+        print(TERMS_NOTE)
+        print("  1=読んだので live を使えるようにする / 2=使えないままにする")
+        s = input("  どうしますか（何も入れずに Enter で変えない）: ").strip()
+        if s == "2":
+            return False, ""
+        if s != "1":
+            return None, "変えませんでした"
+        print("\n  確かに約定を自分で読んで、問題ないと判断しましたか。")
+        print("  そうであれば yes と入れてください（それ以外なら変えません）。")
+        if input("  > ").strip().lower() != "yes":
+            return None, "変えませんでした"
+        return True, ""
     if kind == YESNO:
         print("  1=買う / 2=買わない")
     elif kind in (LIMIT_YEN, LIMIT_POINTS):

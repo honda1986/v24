@@ -310,16 +310,27 @@ class TestSettings(Base):
         return json.load(open(self.cfg_path, encoding="utf-8"))
 
     def test_1点の金額を変えられる(self):
-        self.assertEqual(self.menu("1", "200", "0")["bet_yen"], 200)
+        self.assertEqual(self.menu("2", "200", "0")["bet_yen"], 200)
 
     def test_100円単位でない値は保存しない(self):
-        self.assertEqual(self.menu("1", "150", "0")["bet_yen"], 100)
+        self.assertEqual(self.menu("2", "150", "0")["bet_yen"], 100)
 
     def test_0を入れると無制限になる(self):
-        self.assertIsNone(self.menu("2", "0", "0")["max_yen_per_day"])
+        self.assertIsNone(self.menu("3", "0", "0")["max_yen_per_day"])
 
     def test_穴側を買う設定にできる(self):
-        self.assertTrue(self.menu("5", "1", "0")["buy_ana"])
+        self.assertTrue(self.menu("6", "1", "0")["buy_ana"])
+
+    def test_liveの約定フラグはyesと打たないと立たない(self):
+        # これは「自分で約定を読んだ」という記録なので、1回押しただけでは立てない
+        self.assertFalse(self.menu("1", "1", "", "0")["i_have_read_the_terms"])
+
+    def test_yesと打てば立つ(self):
+        self.assertTrue(self.menu("1", "1", "yes", "0")["i_have_read_the_terms"])
+
+    def test_立てたものを戻せる(self):
+        self.menu("1", "1", "yes", "0")
+        self.assertFalse(self.menu("1", "2", "0")["i_have_read_the_terms"])
 
     def test_覚書のキーは消さない(self):
         with open(self.cfg_path, encoding="utf-8") as f:
@@ -327,7 +338,7 @@ class TestSettings(Base):
         d["_覚書"] = "消えないこと"
         with open(self.cfg_path, "w", encoding="utf-8") as f:
             json.dump(d, f, ensure_ascii=False)
-        self.assertIn("_覚書", self.menu("1", "300", "0"))
+        self.assertIn("_覚書", self.menu("2", "300", "0"))
 
 
 class TestMain(Base):

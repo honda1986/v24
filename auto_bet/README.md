@@ -80,7 +80,11 @@ python auto_bet.py --mode dry
 | `live` | 実際に投票する |
 
 **既定のモードはありません。`--mode` は毎回自分で書きます。**
+
 `live` は `config.json` の `i_have_read_the_terms` が `true` のときだけ起動します。
+これは「テレボートの『電話投票に関する約定』を自分で読んで、自動操作について
+問題ないと判断した」という**あなた自身の記録**です。`run.bat` の `7)` の中の
+`1) live を使う` から、`yes` と打てば立てられます（戻すのも同じところ）。
 
 ```
 python auto_bet.py --mode check
