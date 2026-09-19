@@ -322,9 +322,25 @@ class TestConfirmVerify(unittest.TestCase):
         ng = telebote_page.verify_text(text, "大村", 9, "2-1-4", 100)
         self.assertTrue(any("金額" in x for x in ng))
 
+    def test_金額が口数でしか出ない画面でも読める(self):
+        text = "鳴門 9R 3連単 1-2-4 1口"
+        self.assertEqual(
+            telebote_page.verify_text(text, "鳴門", 9, "1-2-4", 100, units=1), [])
+
+    def test_口数が違えば気づく(self):
+        text = "鳴門 9R 3連単 1-2-4 5口"
+        ng = telebote_page.verify_text(text, "鳴門", 9, "1-2-4", 100, units=1)
+        self.assertTrue(any("金額" in x for x in ng))
+
+    def test_1点は1口(self):
+        self.assertEqual(telebote_page.units_of(100), 1)
+
+    def test_必要なセレクタは埋まっている(self):
+        self.assertEqual(telebote_page.missing_selectors(), [])
+
     def test_セレクタが空なら理由を出して止まる(self):
         with self.assertRaises(telebote_page.SelectorNotSet):
-            telebote_page._sel("submit")
+            telebote_page._sel("logged_in_mark")     # 任意なので空のまま
 
 
 if __name__ == "__main__":

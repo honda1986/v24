@@ -36,7 +36,7 @@
     "空のままだと login モードは起動しません。",
     "画面のセレクタは telebote_page.py の SELECTORS に codegen で採取して入れます。"
   ],
-  "telebote_url": "",
+  "telebote_url": "https://bu.tbbr.jp/",
   "_8_置き場所": "いずれも config.json のあるフォルダからの相対。触らなくてよい",
   "bet_done_path": "bet_done.json",
   "log_path": "logs/auto_bet.log",
