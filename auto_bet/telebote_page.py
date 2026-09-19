@@ -60,6 +60,8 @@ SELECTORS = {
     "keepalive_click": "text=開催情報更新",
     # 投票が済んだ画面からトップへ戻るリンク
     "back_to_top": "text=場を変更して投票",
+    # ベットリストの残り件数を読むところ（見出しの横に数字が出る）
+    "slip_badge": "text=ベットリスト",
     # ログイン済みのときだけ出るもの。|| で区切ると、どれか1つ出ていれば良い
     "logged_in_mark": "text=マイページ || text=購入残高 || text=ログアウト",
 }
@@ -494,6 +496,23 @@ def units_of(yen):
 def bet(page, b, yen, live, shot_dir=None, top_url=""):
     """auto_bet 本体から呼ぶ入口"""
     return TelebotePage(page, shot_dir=shot_dir, top_url=top_url).bet(b, yen, live)
+
+
+def slip_left(page):
+    """ベットリストに残っている件数。読めなければ None
+
+    1点ずつ買うので、投票の前はいつも空のはず。残っていると、
+    次の確認画面が「2ベット」になって照合で止まる。
+    """
+    sel = (SELECTORS.get("slip_badge") or "").strip()
+    if not sel:
+        return None
+    try:
+        text = page.locator(sel).first.inner_text(timeout=3000)
+    except Exception:
+        return None
+    m = re.search(r"([0-9]+)", tight(text))
+    return int(m.group(1)) if m else 0
 
 
 def open_top(page, url):

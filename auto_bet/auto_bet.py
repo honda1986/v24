@@ -96,6 +96,7 @@ class Runner:
         self.stop_path = cfg.path("stop_file")
         self.halt_reason = ""
         self._dry_seen = set()
+        self._dry_races = set()
         self._late_said = set()
         self._last_touch = None
 
@@ -143,8 +144,17 @@ class Runner:
                 self.log.bet(b, "買うべき", f"（check なので投票しません 使用済み {spent}円）")
                 continue
 
-            if self.mode == "dry" and b.key in self._dry_seen:
-                continue            # dry は同じ組を何周も繰り返さない
+            if self.mode == "dry":
+                if b.key in self._dry_seen:
+                    continue        # dry は同じ組を何周も繰り返さない
+                race = (b.date, b.jcd, b.rno, b.kind)
+                if race in self._dry_races:
+                    # dry は押さないので、1点目がベットリストに残る。
+                    # 2点目を試すと確認画面が「2ベット」になって照合で止まる。
+                    # 手順は1点目と同じなので、稽古は1レース1点で足りる
+                    self._dry_seen.add(b.key)
+                    self.log.bet(b, "見送った", "dry は1レース1点だけ試します")
+                    continue
 
             # 念のためもう一度見る。選んでから押すまでの間に時間が経っている
             if self.store.has(b.key):
@@ -168,7 +178,9 @@ class Runner:
 
             if self.mode == "dry":
                 self._dry_seen.add(b.key)
-                self.log.bet(b, "見送った", "確認画面まで（押していません）")
+                self._dry_races.add((b.date, b.jcd, b.rno, b.kind))
+                self.log.bet(b, "見送った", "確認画面まで（押していません）。"
+                                            "★ベットリストに1件残ります")
                 continue
 
             if not pressed:
@@ -410,6 +422,12 @@ def main(argv=None):
                 log.event("終了", "ログインしていない")
                 return 2
             telebote_page.open_home(page)   # ログイン後のトップを起点にする
+            left = telebote_page.slip_left(page)
+            if left:
+                print(f"★ベットリストに {left} 件残っています。")
+                print("  このままだと確認画面の合計が合わず、投票を止めます。")
+                print("  テレボートの画面で、先に消してください。")
+                log.event("見送った", f"ベットリストに {left} 件残っている")
             runner = Runner(cfg, store, args.mode, log,
                             bet_fn=make_bet_fn(cfg, page),
                             keepalive_fn=make_keepalive_fn(cfg, page, log),

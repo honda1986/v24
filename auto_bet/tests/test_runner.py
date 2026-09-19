@@ -89,6 +89,25 @@ class TestCycle(Base):
         r.cycle()
         self.assertEqual(len(fake.calls), 1)
 
+    def test_dryは1レース1点だけ試す(self):
+        # 押さないので1点目がベットリストに残り、2点目は「2ベット」になる
+        fake = FakeBetter()
+        r = self.runner("dry", [day([race(combos=("2-1-4", "2-1-3"))])], bet_fn=fake)
+        r.cycle()
+        self.assertEqual(len(fake.calls), 1)
+        r.cycle()
+        self.assertEqual(len(fake.calls), 1)
+
+    def test_liveは同じレースの2点とも買う(self):
+        # live は押すたびにベットリストが空になるので、2点とも買える
+        fake = FakeBetter()
+        r = self.runner("live", [day([race(combos=("2-1-4", "2-1-3"))])], bet_fn=fake)
+        r.cycle()
+        self.assertEqual(len(fake.calls), 2)
+        self.assertEqual(self.store.keys(),
+                         {"20260918-24-9-2-1-4-帯", "20260918-24-9-2-1-3-帯"})
+        self.assertEqual(self.store.spent_on(DATE), 200)
+
     def test_liveは押して即記録する(self):
         fake = FakeBetter()
         r = self.runner("live", [day([race()])], bet_fn=fake)
