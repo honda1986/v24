@@ -39,7 +39,18 @@ def open_context(cfg):
         kwargs["channel"] = "chrome"
 
     with sync_playwright() as p:
-        context = p.chromium.launch_persistent_context(**kwargs)
+        try:
+            context = p.chromium.launch_persistent_context(**kwargs)
+        except Exception as e:
+            raise BrowserUnavailable(
+                f"Chrome を起動できません: {type(e).__name__}: {e}\n"
+                "  ・login モードで開いた Chrome が残っていたら、閉じてください\n"
+                "    （同じプロファイルは2つ同時に使えません）\n"
+                f"  ・使っているプロファイル: {user_data_dir}\n"
+                "  ・ウイルス対策ソフトが止めていないか確認してください\n"
+                "  ・Chrome が入っていない場合は config.json の "
+                "use_installed_chrome を false にしてください"
+            )
         try:
             page = context.pages[0] if context.pages else context.new_page()
             yield context, page

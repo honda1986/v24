@@ -286,6 +286,7 @@ def main(argv=None):
     # dry / live は画面を触る。足りないものは動く前に言う
     if not cfg.telebote_url:
         print("config.json の telebote_url が空です。テレボートのURLを入れてください。")
+        print("（新しい版なら最初から入っています。ZIP が古いかもしれません）")
         return 2
     missing = telebote_page.missing_selectors()
     if missing:
@@ -294,8 +295,10 @@ def main(argv=None):
         print("で実際に1点買ってみて、出てきたコードから写してください。")
         return 2
 
+    print(f"Chrome を起動しています（数秒かかります）: {cfg.path('profile_dir')}")
     try:
         with browser.open_context(cfg) as (_ctx, page):
+            print(f"{cfg.telebote_url} を開きます")
             telebote_page.open_top(page, cfg.telebote_url)   # ここを起点にする
             if telebote_page.check_logged_in(page) is False:
                 print("ログインが切れているようです。--mode login をやり直してください。")
