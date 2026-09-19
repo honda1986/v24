@@ -24,9 +24,8 @@ import unicodedata
 # 画面の場所。codegen の記録から起こしたもの
 # --------------------------------------------------------------------------
 SELECTORS = {
-    # ★レースの開き方。URL を直接開くとトップへ戻されることがあるので、
-    #   「トップ → 場を選ぶ → （必要ならレースを選ぶ）」と人と同じ順に辿る。
-    #   URL は場を選んだ後でだけ使う
+    # ★レースは必ずクリックで辿る。URL を直接開くとログインが切れる。
+    #   下の race_url は、着いたかどうかを URL で確かめるための形の控え
     "race_url": "https://bu.tbbr.jp/bet?hatsubaiKbn=0&jyoCode={jcd:02d}&raceNo={rno:02d}",
     "place_link": "text={place}",          # トップの場のカード
     # 場の画面で、レース選択を開くところ。ボタンの名前は「4R 12:47」のように
@@ -54,7 +53,9 @@ SELECTORS = {
     # ★ログイン後のトップ。生存確認も投票後の後始末も、必ずここへ戻る。
     #   入口（config.json の telebote_url）はログイン画面なので、
     #   そこへ戻るとログインが切れる
-    "home_url": "https://bu.tbbr.jp/top?hatsubaiKbn=0",
+    "home_url": "https://bu.tbbr.jp/top?hatsubaiKbn=0",   # 最後の手段
+    # ★画面の中の「トップ」。URL を開くとログインが切れるので、必ずこちらで戻る
+    "home_link": "text=トップ",
     # ログアウト避けに押すもの。開き直すより画面の中を動かすほうが安全
     "keepalive_click": "text=開催情報更新",
     # 投票が済んだ画面からトップへ戻るリンク
@@ -288,12 +289,7 @@ class TelebotePage:
             print(f"   （レース選択で失敗: {type(e).__name__}: {e}）")
         self.dump(b, "レース選択")
 
-        url = (SELECTORS.get("race_url") or "").strip()
-        if url:
-            self.page.goto(url.format(jcd=b.jcd, rno=b.rno), timeout=TIMEOUT_MS)
-            if self.arrived(b):
-                return "URL"
-        self.dump(b, "URL")
+        # URL を直接開く道は使わない。開くとログインが切れるため
         self._safe_reset()
         raise BetAborted(f"{b.place}{b.rno}R の画面を開けません（いま {self.page.url}）")
 
@@ -412,11 +408,18 @@ class TelebotePage:
                 return text
         raise BetAborted("確認画面の文字が読めません")
 
-    def submit(self, yen):
-        """合計金額を打ち直して確定する。押した後で転んだら BetUncertain"""
+    def fill_total(self, yen):
+        """確認画面の合計金額を入れる。まだ押さない
+
+        dry でもここまでやる。入れずに止めると、live で初めて通る手が
+        残ってしまい、確かめたことにならない。
+        """
         total = (SELECTORS.get("total_amount") or "").strip()
         if total:
-            self._fill(total, yen)          # ここまでは押していない
+            self._fill(total, yen)
+
+    def submit(self):
+        """確定を押す。押した後で転んだら BetUncertain"""
         sel = _sel("submit")
         self.page.wait_for_selector(sel, timeout=TIMEOUT_MS)
         try:
@@ -464,19 +467,21 @@ class TelebotePage:
         except Exception:
             self.dump(b, "途中で失敗")   # 何が出ていたかを残す
             raise
-        self._shot(b, "confirm")
-
         units = units_of(yen) if AMOUNT_IN_UNITS else None
         ng = verify_text(self.confirm_text(), b.place, b.rno, b.combo, yen, units)
         if ng:
+            self.dump(b, "照合できず")      # 何が出ていたかを残す
             self._safe_reset()
             raise BetAborted("確認画面が意図と一致しません: " + " / ".join(ng))
 
+        self.fill_total(yen)      # 合計金額まで入れる。押すのはこの次
+        self._shot(b, "confirm")  # live が押す直前と同じ画面を残す
+
         if not live:
-            self._safe_reset()    # dry は確認画面まで。押さない
+            self._safe_reset()    # dry はここまで。押さない
             return False
 
-        self.submit(yen)          # ここから先の失敗は BetUncertain
+        self.submit()             # ここから先の失敗は BetUncertain
         self._safe_reset()        # 後始末で転んでも、投票は通っている
         return True
 
@@ -497,15 +502,26 @@ def open_top(page, url):
 
 
 def open_home(page):
-    """ログイン後のトップを開く
+    """ログイン後のトップへ戻る
 
-    home_url が空なら、いまの画面を読み込み直すだけにする。
+    ★URL を開くとログインが切れるサイトなので、まず画面の中のリンクを押す。
+      押せないときだけ URL を開く（最後の手段）。
     """
+    link = (SELECTORS.get("home_link") or "").strip()
+    if link:
+        try:
+            page.wait_for_selector(link, timeout=5000)
+            page.click(link)
+            page.wait_for_timeout(500)
+            return "リンク"
+        except Exception:
+            pass
     url = (SELECTORS.get("home_url") or "").strip()
     if url:
         page.goto(url, timeout=TIMEOUT_MS)
-    else:
-        page.reload(timeout=TIMEOUT_MS)
+        return "URL"
+    page.reload(timeout=TIMEOUT_MS)
+    return "読み込み直し"
 
 
 def keepalive(page):
