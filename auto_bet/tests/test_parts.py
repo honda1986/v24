@@ -291,6 +291,49 @@ class TestConfig(unittest.TestCase):
             cfg(bet_yen=100, max_yen_per_day=50)
 
 
+class TestConfirmArea(unittest.TestCase):
+    """確認画面のどこを読むか。表が複数あるので選び間違えないこと"""
+
+    REAL = ("No 場・レース・勝式 1 宮島7R 3連単 1 - 2 - 3 75.8 100円 "
+            "合計ベット数 1ベット 合計金額 100円")
+
+    class FakePage:
+        def __init__(self, tables, body):
+            self.tables, self.body = tables, body
+
+        def locator(self, sel):
+            outer = self
+
+            class Loc:
+                def count(self):
+                    return len(outer.tables)
+
+                def nth(self, i):
+                    t = outer.tables[i]
+                    return type("E", (), {"inner_text": lambda s=None, t=t: t})()
+            return Loc()
+
+        def inner_text(self, sel):
+            return self.body
+
+    def read(self, tables, body):
+        page = self.FakePage(tables, body)
+        return telebote_page.TelebotePage(page).confirm_text()
+
+    def test_買い目の表が2つ目でも選べる(self):
+        got = self.read(["入金 照会 マイページ", self.REAL], "全体 " + self.REAL)
+        self.assertIn("宮島7R", got)
+
+    def test_表に無ければ画面全体を読む(self):
+        got = self.read(["関係ない表"], "全体 " + self.REAL)
+        self.assertIn("宮島7R", got)
+
+    def test_選んだ文字で照合が通る(self):
+        got = self.read(["ヘッダー", self.REAL], "")
+        self.assertEqual(
+            telebote_page.verify_text(got, "宮島", 7, "1-2-3", 100, units=1), [])
+
+
 class TestIsRace(unittest.TestCase):
     """URL を見て、目当てのレースに着いたかどうか"""
 

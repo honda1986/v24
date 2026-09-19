@@ -47,8 +47,10 @@ SELECTORS = {
     "add_to_slip": "text=ベットリストに追加して投票へ進む",
     "to_confirm": "role=button[name=\"次へ\"]",
     "confirm_mark": "text=投票はまだ完了していません",   # 確認画面に着いた印
-    "confirm_area": "table",               # 照合に使う範囲。買い目の表だけを見る
-    "confirm_area_fallback": "body",       # 表が取れないときは画面全体で見る
+    # 照合に使う範囲。表が複数あるので、「合計金額」が載っている表を選ぶ。
+    # 見つからなければ画面全体を読む
+    "confirm_area": "table",
+    "confirm_area_fallback": "body",
     # 確認画面で打ち直す合計金額
     "total_amount": "role=textbox || input[type=text] || input[type=number] "
                     "|| input:not([type=hidden])",
@@ -75,6 +77,7 @@ RACE_BUTTON = r"^[0-9]+R\s"        # 場の画面の「4R 12:47」
 RACE_IN_LIST = r"^{rno}R(\D|$)"    # 一覧の「4R 予選 12:47」
 
 # 確認画面の合計欄の書き方。ここが変わったら直す
+CONFIRM_KEY = "合計金額"           # 照合に使う範囲を見分ける目印
 TOTAL_BETS = "合計ベット数{n}ベット"
 TOTAL_YEN = "合計金額{yen}円"
 BET_TYPE = "3連単"
@@ -431,18 +434,27 @@ class TelebotePage:
         self.page.wait_for_selector(mark, timeout=TIMEOUT_MS)
 
     def confirm_text(self):
-        """照合に使う文字。買い目の表だけを見て、取れなければ画面全体で見る"""
-        for name in ("confirm_area", "confirm_area_fallback"):
-            sel = (SELECTORS.get(name) or "").strip()
-            if not sel:
-                continue
+        """照合に使う文字を取る
+
+        この画面には表が複数あるので、最初の表を読むと買い目の表ではない
+        ことがある（それで照合が全部外れていた）。「合計金額」が載っている
+        ものを選び、見つからなければ画面全体を読む。
+        """
+        sel = (SELECTORS.get("confirm_area") or "").strip()
+        if sel:
             try:
-                text = self.page.inner_text(sel)
+                boxes = self.page.locator(sel)
+                for i in range(min(boxes.count(), 8)):
+                    text = boxes.nth(i).inner_text()
+                    if CONFIRM_KEY in tight(text or ""):
+                        return text
             except Exception:
-                continue
-            if (text or "").strip():
-                return text
-        raise BetAborted("確認画面の文字が読めません")
+                pass
+        fallback = (SELECTORS.get("confirm_area_fallback") or "body").strip()
+        text = self.page.inner_text(fallback)
+        if not (text or "").strip():
+            raise BetAborted("確認画面の文字が読めません")
+        return text
 
     def fill_total(self, yen):
         """確認画面の合計金額を入れる。まだ押さない
@@ -504,11 +516,13 @@ class TelebotePage:
             self.dump(b, "途中で失敗")   # 何が出ていたかを残す
             raise
         units = units_of(yen) if AMOUNT_IN_UNITS else None
-        ng = verify_text(self.confirm_text(), b.place, b.rno, b.combo, yen, units)
+        text = self.confirm_text()
+        ng = verify_text(text, b.place, b.rno, b.combo, yen, units)
         if ng:
             self.dump(b, "照合できず")      # 何が出ていたかを残す
             self._safe_reset()
-            raise BetAborted("確認画面が意図と一致しません: " + " / ".join(ng))
+            raise BetAborted("確認画面が意図と一致しません: " + " / ".join(ng)
+                             + f"｜読んだ文字: {tight(text)[:120]}")
 
         try:
             self.fill_total(yen)   # 合計金額まで入れる。押すのはこの次
