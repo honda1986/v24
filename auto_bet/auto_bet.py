@@ -399,8 +399,12 @@ def main(argv=None):
     print(f"Chrome を起動しています（数秒かかります）: {cfg.path('profile_dir')}")
     try:
         with browser.open_context(cfg) as (_ctx, page):
-            print(f"{cfg.telebote_url} を開きます")
-            telebote_page.open_top(page, cfg.telebote_url)   # ここを起点にする
+            # ★先にログイン後のトップを開く。ログイン画面を開くと、
+            #   すでに入っていても切れてしまう
+            telebote_page.open_home(page)
+            if telebote_page.check_logged_in(page) is False:
+                print(f"ログイン画面を開きます: {cfg.telebote_url}")
+                telebote_page.open_top(page, cfg.telebote_url)
             if not ensure_logged_in(cfg, page):
                 print("ログインが確認できないので止めます。")
                 log.event("終了", "ログインしていない")
