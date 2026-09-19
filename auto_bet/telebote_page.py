@@ -71,8 +71,10 @@ SELECTORS = {
     # ★dry のあと、残った買い目を片付けるため。中身は推測なので、
     #   効かなければ手で消してもらう（消せたかは件数で確かめる）
     "slip_open": "text=ベットリスト",
-    "slip_clear": ("text=全て削除 || text=すべて削除 || text=全削除 || text=全件削除 "
-                   "|| text=クリア || role=button[name=\"削除\"]"),
+    "slip_clear": ("text=全削除 || text=全て削除 || text=すべて削除 || text=全件削除 "
+                   "|| text=クリア"),
+    # 全削除のあとに確認が出たら答えるところ
+    "slip_clear_ok": "text=はい || text=OK || role=button[name=\"削除\"] || text=削除する",
     # ログイン済みのときだけ出るもの。|| で区切ると、どれか1つ出ていれば良い
     "logged_in_mark": "text=マイページ || text=購入残高 || text=ログアウト",
 }
@@ -189,9 +191,18 @@ class TelebotePage:
         self.top_url = top_url
 
     # ---- 部品 ------------------------------------------------------------
+    def settle(self, timeout=5000):
+        """読み込み中の輪が消えるのを待つ。出たままだとクリックが全部吸われる"""
+        try:
+            self.page.wait_for_load_state("networkidle", timeout=timeout)
+        except Exception:
+            pass
+
     def _click(self, selector, timeout=TIMEOUT_MS):
+        self.settle()
         self.page.wait_for_selector(selector, timeout=timeout)
         self.page.click(selector)
+        self.page.wait_for_timeout(300)
 
     def _click_any(self, selector, timeout=5000):
         """|| で区切った候補を順に試す。どれも押せなければ False"""
@@ -226,11 +237,11 @@ class TelebotePage:
                         continue
                     el.click(timeout=2000)
                     el.fill(want, timeout=2000)
-                    if (el.input_value() or "").strip() == want:
+                    if self._committed(el, want):
                         return
                     el.fill("")                          # 効かなければ1文字ずつ
                     el.type(want, delay=50)
-                    if (el.input_value() or "").strip() == want:
+                    if self._committed(el, want):
                         return
                     tried.append(f"{one}[{i}]: {el.input_value()!r} になった")
                 except Exception as e:
@@ -266,6 +277,20 @@ class TelebotePage:
             if not verify or self._is_checked(el):
                 return
         raise BetAborted(f"{selector} にチェックを入れられません（{last}）")
+
+    def _committed(self, el, want):
+        """入れた値を確定させて、残っているか見る
+
+        入れただけでは拾わない作りがあるので、Tab を打って確定させる。
+        """
+        if (el.input_value() or "").strip() != want:
+            return False
+        try:
+            el.press("Tab")
+            self.page.wait_for_timeout(200)
+        except Exception:
+            pass
+        return (el.input_value() or "").strip() == want
 
     def _is_checked(self, el):
         """入ったかどうか。チェックボックスでなければ確かめようがないので True"""
@@ -615,7 +640,7 @@ def clear_slip(page):
     """
     if not slip_left(page):
         return True
-    for name in ("slip_open", "slip_clear"):
+    for name in ("slip_open", "slip_clear", "slip_clear_ok"):
         sel = (SELECTORS.get(name) or "").strip()
         if not sel:
             continue
