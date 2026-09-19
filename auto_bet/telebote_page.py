@@ -192,13 +192,42 @@ class TelebotePage:
         self.page.wait_for_selector(selector, timeout=TIMEOUT_MS)
         self.page.fill(selector, str(value))
 
-    def _set_lane(self, selector):
-        """着順のチェックボックス。check が効かない作りなら click に落とす"""
-        self.page.wait_for_selector(selector, timeout=TIMEOUT_MS)
+    def _set_lane(self, selector, verify=True):
+        """チェックを入れる
+
+        テレボートの着順は、見えているマスと実体のチェックボックスが別もので、
+        実体のほうは隠れていることがある（採取の記録でも、マスを押してから
+        #bet1-1 が check されていた）。Playwright は隠れた要素を押せないので、
+        押し方を順に落としていく。最後に、本当に入ったかを確かめる。
+        """
+        el = self.page.locator(selector).first
+        el.wait_for(state="attached", timeout=TIMEOUT_MS)
+
+        ways = []
+        ways.append(lambda: el.check(timeout=3000))          # ふつうに
+        if selector.startswith("#"):                          # 隠れた input なら
+            sid = selector[1:]
+            ways.append(lambda: self.page.click(f"label[for='{sid}']", timeout=2000))
+        ways.append(lambda: el.check(timeout=2000, force=True))
+        ways.append(lambda: el.dispatch_event("click"))       # DOM に直接
+
+        last = None
+        for way in ways:
+            try:
+                way()
+            except Exception as e:
+                last = e
+                continue
+            if not verify or self._is_checked(el):
+                return
+        raise BetAborted(f"{selector} にチェックを入れられません（{last}）")
+
+    def _is_checked(self, el):
+        """入ったかどうか。チェックボックスでなければ確かめようがないので True"""
         try:
-            self.page.check(selector)
+            return el.is_checked()
         except Exception:
-            self.page.click(selector)
+            return True
 
     def dump(self, b, tag):
         """いまの画面を残す。何が出ているか分からないと直しようがない
@@ -427,10 +456,14 @@ class TelebotePage:
 
         例外は握りつぶさない。呼び出し側がその周を打ち切る。
         """
-        self.open_race(b)
-        self.enter_combo(b.combo)      # 勝式は触らない。3連単は最初から選ばれている
-        self.enter_amount(yen)
-        self.to_confirm()
+        try:
+            self.open_race(b)
+            self.enter_combo(b.combo)  # 勝式は触らない。3連単は最初から選ばれている
+            self.enter_amount(yen)
+            self.to_confirm()
+        except Exception:
+            self.dump(b, "途中で失敗")   # 何が出ていたかを残す
+            raise
         self._shot(b, "confirm")
 
         units = units_of(yen) if AMOUNT_IN_UNITS else None
