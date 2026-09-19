@@ -7,7 +7,7 @@ import shutil
 import sys
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -196,6 +196,33 @@ class TestCycle(Base):
         self.assertIn("今日 帯1 レース", line)
         self.assertIn("いま投票できる組 0件", line)
         self.assertIn("次は 大村9R 帯 締切18:00", line)
+
+    def test_買い目が無い時間が続いたら画面を開き直す(self):
+        # テレボートは一定時間操作がないとログアウトさせられる
+        touched = []
+        r = self.runner("live", [day([race(close="18:00")])], bet_fn=FakeBetter())
+        r.keepalive_fn = lambda: touched.append(1) or True
+        times = [NOW, NOW + timedelta(minutes=5), NOW + timedelta(minutes=20)]
+        r.now_fn = lambda: times.pop(0) if len(times) > 1 else times[0]
+        r.cycle()
+        self.assertEqual(len(touched), 1)          # 初回
+        r.cycle()
+        self.assertEqual(len(touched), 1)          # 5分後はまだ
+        r.cycle()
+        self.assertEqual(len(touched), 2)          # 10分以上あいたら開き直す
+
+    def test_ログインが切れていたら止まる(self):
+        r = self.runner("live", [day([race(close="18:00")])], bet_fn=FakeBetter())
+        r.keepalive_fn = lambda: False
+        self.assertEqual(r.cycle(), "halt")
+        self.assertIn("ログインが切れました", r.halt_reason)
+
+    def test_開き直しに失敗しても落ちない(self):
+        def boom():
+            raise RuntimeError("画面が応答しません")
+        r = self.runner("live", [day([race(close="18:00")])], bet_fn=FakeBetter())
+        r.keepalive_fn = boom
+        self.assertEqual(r.cycle(), "ok")
 
     def test_ログが1行1イベントで残る(self):
         r = self.runner("live", [day([race()])], bet_fn=FakeBetter())

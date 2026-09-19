@@ -24,12 +24,14 @@ import unicodedata
 # 画面の場所。codegen の記録から起こしたもの
 # --------------------------------------------------------------------------
 SELECTORS = {
-    # 場とレースを開く。URL で直接開けるならこの型を書く（{jcd} {rno} が入る）
-    "race_url": "",
-    "place_link": "text={place}",          # get_by_text("鳴門").first と同じ
-    "race_link": "text={rno}R",            # ★要確認。レース番号の押し方
-    # 3連単が最初から選ばれているなら空のままでよい
-    "trifecta_tab": "",                    # ★要確認
+    # レースは URL で直接開ける。jyoCode は v24 の jcd と同じ番号
+    # ★1桁の場（浜名湖6・蒲郡7・常滑8・津9）で 06 と 6 のどちらかは未確認
+    "race_url": "https://bu.tbbr.jp/bet?hatsubaiKbn=0&jyoCode={jcd:02d}&raceNo={rno:02d}",
+    "place_link": "text={place}",          # race_url が使えないときの控え
+    "race_link": "text={rno}R",            # 同上
+    # 勝式を3連単にする。押すところ → 出てくる中から選ぶところ
+    "bet_type_open": "role=button[name=\"連単\"]",
+    "bet_type_trifecta": "role=radio[name=\"3連単\"]",
     # 着順のチェックボックス。{d} に艇番が入る
     "lane1": "#bet1-{d}",
     "lane2": "#bet2-{d}",
@@ -37,14 +39,19 @@ SELECTORS = {
     "amount": "role=textbox",              # 口数（1口 = 100円）
     "add_to_slip": "text=ベットリストに追加して投票へ進む",
     "to_confirm": "role=button[name=\"次へ\"]",
-    "confirm_area": "body",                # ★要確認。確認画面の、照合に使う範囲
-    "total_amount": "role=textbox",        # 確認画面で打ち直す合計金額。無ければ空
+    "confirm_mark": "text=投票はまだ完了していません",   # 確認画面に着いた印
+    "confirm_area": "table",               # 照合に使う範囲。買い目の表だけを見る
+    "confirm_area_fallback": "body",       # 表が取れないときは画面全体で見る
+    "total_amount": "role=textbox",        # 確認画面で打ち直す合計金額
     "submit": "role=button[name=\"投票\"]",
     "done_mark": "text=場を変更して投票",   # 投票完了の印
-    # 任意。ログイン済みのときだけ出ている要素を入れておくと、
-    # セッションが切れているのに動き続けるのを起動時に止められる
-    "logged_in_mark": "",
+    "logged_in_mark": "text=マイページ",    # ログイン済みのときだけ出るもの
 }
+
+# 確認画面の合計欄の書き方。ここが変わったら直す
+TOTAL_BETS = "合計ベット数{n}ベット"
+TOTAL_YEN = "合計金額{yen}円"
+BET_TYPE = "3連単"
 
 # 金額欄が「口数（100円＝1口）」なら True、「円」そのままなら False
 AMOUNT_IN_UNITS = True
@@ -107,12 +114,14 @@ def tight(text):
     return re.sub(r"\s+", "", norm(text))
 
 
-def verify_text(text, place, rno, combo, yen, units=None):
+def verify_text(text, place, rno, combo, yen, units=None, totals=True):
     """確認画面の文字列が、買おうとしているものと一致するか
 
-    画面もネットも要らないので、テストから直接叩ける。
-    金額だけは空白を残したまま見る（組の数字と地続きに読めてしまうため）。
-    金額が「口数」でしか出ない画面なら units を渡す。どちらかが読めれば通す。
+    画面もネットも要らないので、テストから直接叩ける。これが最後の砦。
+
+    totals=True のときは合計欄も見る。1点ずつ買うので、確認画面はいつも
+    「合計ベット数 1ベット / 合計金額 100円」のはず。ここがずれていたら、
+    ベットリストに前回の買い残りが混ざっている。押さずに止める。
     """
     spaced, packed = norm(text), tight(text)
     ng = []
@@ -120,12 +129,19 @@ def verify_text(text, place, rno, combo, yen, units=None):
         ng.append(f"場({place})が確認画面に無い")
     if not re.search(rf"(?<![0-9]){rno}(R|レース)", packed):
         ng.append(f"レース番号({rno}R)が確認画面に無い")
+    if BET_TYPE and tight(BET_TYPE) not in packed:
+        ng.append(f"勝式({BET_TYPE})が確認画面に無い")
     if tight(combo) not in packed:
         ng.append(f"組({combo})が確認画面に無い")
     ok_yen = re.search(rf"(?<![0-9]){yen}(?![0-9])", spaced)
     ok_unit = units is not None and re.search(rf"(?<![0-9]){units} ?口", spaced)
     if not (ok_yen or ok_unit):
         ng.append(f"金額({yen}円)が確認画面に無い")
+    if totals:
+        if TOTAL_BETS and tight(TOTAL_BETS.format(n=1)) not in packed:
+            ng.append("合計が1ベットではない（ベットリストに買い残りがあるかも）")
+        if TOTAL_YEN and tight(TOTAL_YEN.format(yen=yen)) not in packed:
+            ng.append(f"合計金額が{yen}円ではない")
     return ng
 
 
@@ -171,10 +187,20 @@ class TelebotePage:
             self._click(_sel("race_link", rno=b.rno))
 
     def choose_trifecta(self):
-        """3連単を選ぶ。最初から3連単の画面なら SELECTORS を空にしておく"""
-        tab = (SELECTORS.get("trifecta_tab") or "").strip()
-        if tab:
-            self._click(tab)
+        """勝式を3連単にする
+
+        すでに3連単が選ばれていると、押すところが出ない・名前が変わることがある。
+        ここでの失敗は見逃して進み、確認画面の「3連単」の照合で拾う。
+        """
+        for name in ("bet_type_open", "bet_type_trifecta"):
+            sel = (SELECTORS.get(name) or "").strip()
+            if not sel:
+                continue
+            try:
+                self.page.wait_for_selector(sel, timeout=3000)
+                self._set_lane(sel)         # radio も button もこれで押せる
+            except Exception:
+                pass
 
     def enter_combo(self, combo):
         parts = [p for p in combo.split("-") if p]
@@ -193,10 +219,22 @@ class TelebotePage:
 
     def to_confirm(self):
         self._click(_sel("to_confirm"))
-        self.page.wait_for_selector(_sel("confirm_area"), timeout=TIMEOUT_MS)
+        mark = (SELECTORS.get("confirm_mark") or "").strip() or _sel("confirm_area")
+        self.page.wait_for_selector(mark, timeout=TIMEOUT_MS)
 
     def confirm_text(self):
-        return self.page.inner_text(_sel("confirm_area"))
+        """照合に使う文字。買い目の表だけを見て、取れなければ画面全体で見る"""
+        for name in ("confirm_area", "confirm_area_fallback"):
+            sel = (SELECTORS.get(name) or "").strip()
+            if not sel:
+                continue
+            try:
+                text = self.page.inner_text(sel)
+            except Exception:
+                continue
+            if (text or "").strip():
+                return text
+        raise BetAborted("確認画面の文字が読めません")
 
     def submit(self, yen):
         """合計金額を打ち直して確定する。押した後で転んだら BetUncertain"""

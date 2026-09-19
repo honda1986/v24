@@ -39,20 +39,26 @@ true にしてください。判断できないなら false のままで構い�
 dry モードなら、投票を押す直前まで全部動きます。"""
 
 
+KEEPALIVE_MINUTES = 10
+
+
 class Runner:
     """1周ぶんの流れ。画面操作は bet_fn として外から差し込む（テストは偽物を渡す）"""
 
-    def __init__(self, cfg, store, mode, log, bet_fn=None,
+    def __init__(self, cfg, store, mode, log, bet_fn=None, keepalive_fn=None,
                  fetch_fn=None, now_fn=None):
         self.cfg = cfg
         self.store = store
         self.mode = mode
         self.log = log
         self.bet_fn = bet_fn
+        self.keepalive_fn = keepalive_fn
         self.fetch_fn = fetch_fn or (lambda url: history_source.fetch(url))
         self.now_fn = now_fn or now
         self.stop_path = cfg.path("stop_file")
+        self.halt_reason = ""
         self._dry_seen = set()
+        self._last_touch = None
 
     def stopped(self):
         return os.path.exists(self.stop_path)
@@ -84,7 +90,7 @@ class Runner:
         self.log.event("見た", f"今日 {kinds} レース / いま投票できる組 "
                                f"{len(res.bets)}件 / {nxt}")
         if not res.bets:
-            return "ok"
+            return self._keepalive(at)
 
         for b in res.bets:
             if self.stopped():
@@ -134,8 +140,32 @@ class Runner:
                                         "★手で確認してください。止めます")
                 return "halt"
             spent += b.yen
+            self._last_touch = self.now_fn()
             self.log.bet(b, "投票した", f"当日計 {spent}円")
 
+        return "ok"
+
+    def _keepalive(self, at):
+        """買い目が無い時間が続くとテレボートからログアウトさせられる
+
+        「一定時間操作がない場合、自動的にログアウトします」と画面に出ている。
+        たまにトップを開き直して、ログインが生きているかも見る。
+        """
+        if not self.keepalive_fn:
+            return "ok"
+        if self._last_touch is not None:
+            if (at - self._last_touch).total_seconds() < KEEPALIVE_MINUTES * 60:
+                return "ok"
+        self._last_touch = at
+        try:
+            alive = self.keepalive_fn()
+        except Exception as e:
+            self.log.event("見送った", f"画面を開き直せません（{type(e).__name__}: {e}）")
+            return "ok"
+        if alive is False:
+            self.halt_reason = ("★ログインが切れました。"
+                                "--mode login をやり直してから動かしてください")
+            return "halt"
         return "ok"
 
     def _uncertain(self, b, e):
@@ -161,8 +191,9 @@ class Runner:
                 self.log.event("終了", f"{self.stop_path} があるので止めます")
                 return 0
             if state == "halt":
-                self.log.event("終了", "★投票の結果が分からないので止めました。"
-                                       "テレボートの投票履歴を見て確認してください")
+                self.log.event("終了", self.halt_reason or
+                               "★投票の結果が分からないので止めました。"
+                               "テレボートの投票履歴を見て確認してください")
                 return 4
             if state == "abort":
                 self.log.event("打ち切り", "この周は途中で止めました。次の周へ")
@@ -198,6 +229,13 @@ def make_bet_fn(cfg, page):
         return telebote_page.bet(page, b, yen, live,
                                  shot_dir=shot_dir, top_url=cfg.telebote_url)
     return bet_fn
+
+
+def make_keepalive_fn(cfg, page):
+    def keepalive_fn():
+        telebote_page.open_top(page, cfg.telebote_url)
+        return telebote_page.check_logged_in(page)
+    return keepalive_fn
 
 
 def main(argv=None):
@@ -263,7 +301,9 @@ def main(argv=None):
                 print("ログインが切れているようです。--mode login をやり直してください。")
                 log.event("終了", "ログインが切れている")
                 return 2
-            runner = Runner(cfg, store, args.mode, log, bet_fn=make_bet_fn(cfg, page))
+            runner = Runner(cfg, store, args.mode, log,
+                            bet_fn=make_bet_fn(cfg, page),
+                            keepalive_fn=make_keepalive_fn(cfg, page))
             return runner.loop(once=args.once)
     except browser.BrowserUnavailable as e:
         print(e)

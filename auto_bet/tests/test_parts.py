@@ -292,44 +292,63 @@ class TestConfig(unittest.TestCase):
 
 
 class TestConfirmVerify(unittest.TestCase):
-    """確認画面の照合。ここが最後の砦"""
+    """確認画面の照合。ここが最後の砦
+
+    文面は実際の確認画面（bu.tbbr.jp/betconf）に合わせてある。
+    """
+
+    def screen(self, place="鳴門", rno=9, kind="3連単", combo="2-3-5", yen=100, n=1):
+        return (
+            "投票はまだ完了していません。\n"
+            "合計金額を入力し、「投票」を押して下さい。\n"
+            "No 場・レース・勝式 オッズ 購入金額\n組番\n"
+            f"1 {place}{rno}R {kind}\n{combo.replace('-', ' - ')}\n75.8\n{yen}円\n"
+            f"合計ベット数 {n}ベット\n合計金額 {yen * n}円\n"
+        )
+
+    def ng(self, **over):
+        return telebote_page.verify_text(self.screen(**over), "鳴門", 9, "2-3-5", 100,
+                                         units=1)
 
     def test_一致すればNG無し(self):
-        text = "大村 9R 3連単 2-1-4 100円"
-        self.assertEqual(telebote_page.verify_text(text, "大村", 9, "2-1-4", 100), [])
+        self.assertEqual(self.ng(), [])
+
+    def test_組が違えば気づく(self):
+        self.assertTrue(any("組" in x for x in self.ng(combo="2-3-4")))
+
+    def test_レースが違えば気づく(self):
+        self.assertTrue(any("レース番号" in x for x in self.ng(rno=8)))
+
+    def test_場が違えば気づく(self):
+        self.assertTrue(any("場" in x for x in self.ng(place="宮島")))
+
+    def test_金額が違えば気づく(self):
+        self.assertTrue(any("金額" in x for x in self.ng(yen=500)))
+
+    def test_勝式が違えば気づく(self):
+        self.assertTrue(any("勝式" in x for x in self.ng(kind="3連複")))
+
+    def test_ベットリストに買い残りがあれば気づく(self):
+        # 前の周で追加したまま投票しなかった組が残っていると、合計が合わない
+        ng = self.ng(n=2)
+        self.assertTrue(any("1ベット" in x for x in ng))
+        self.assertTrue(any("合計金額" in x for x in ng))
 
     def test_全角や記号が違っても読み替える(self):
         text = "大村　９Ｒ　３連単　２＝１＝４　１００円"
-        self.assertEqual(telebote_page.verify_text(text, "大村", 9, "2-1-4", 100), [])
-
-    def test_組が違えば気づく(self):
-        text = "大村 9R 3連単 2-1-3 100円"
-        ng = telebote_page.verify_text(text, "大村", 9, "2-1-4", 100)
-        self.assertTrue(any("組" in x for x in ng))
-
-    def test_レースが違えば気づく(self):
-        text = "大村 8R 3連単 2-1-4 100円"
-        ng = telebote_page.verify_text(text, "大村", 9, "2-1-4", 100)
-        self.assertTrue(any("レース番号" in x for x in ng))
-
-    def test_場が違えば気づく(self):
-        text = "宮島 9R 3連単 2-1-4 100円"
-        ng = telebote_page.verify_text(text, "大村", 9, "2-1-4", 100)
-        self.assertTrue(any("場" in x for x in ng))
-
-    def test_金額が違えば気づく(self):
-        text = "大村 9R 3連単 2-1-4 1,000円"
-        ng = telebote_page.verify_text(text, "大村", 9, "2-1-4", 100)
-        self.assertTrue(any("金額" in x for x in ng))
+        self.assertEqual(
+            telebote_page.verify_text(text, "大村", 9, "2-1-4", 100, totals=False), [])
 
     def test_金額が口数でしか出ない画面でも読める(self):
         text = "鳴門 9R 3連単 1-2-4 1口"
         self.assertEqual(
-            telebote_page.verify_text(text, "鳴門", 9, "1-2-4", 100, units=1), [])
+            telebote_page.verify_text(text, "鳴門", 9, "1-2-4", 100, units=1,
+                                      totals=False), [])
 
     def test_口数が違えば気づく(self):
         text = "鳴門 9R 3連単 1-2-4 5口"
-        ng = telebote_page.verify_text(text, "鳴門", 9, "1-2-4", 100, units=1)
+        ng = telebote_page.verify_text(text, "鳴門", 9, "1-2-4", 100, units=1,
+                                       totals=False)
         self.assertTrue(any("金額" in x for x in ng))
 
     def test_1点は1口(self):
@@ -340,7 +359,7 @@ class TestConfirmVerify(unittest.TestCase):
 
     def test_セレクタが空なら理由を出して止まる(self):
         with self.assertRaises(telebote_page.SelectorNotSet):
-            telebote_page._sel("logged_in_mark")     # 任意なので空のまま
+            telebote_page._sel("まだ無いもの")
 
 
 if __name__ == "__main__":
