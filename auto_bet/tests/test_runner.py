@@ -187,6 +187,16 @@ class TestCycle(Base):
         self.assertEqual(fake.calls, [])
         self.assertEqual(self.store.keys(), set())
 
+    def test_締切に間に合わなかった買い目は理由を1度だけ言う(self):
+        # v24 の push が締切間際になった日。黙って飛ばすと理由が分からない
+        r = self.runner("check", [day([race(close="14:51")])])
+        r.cycle()
+        r.cycle()
+        with open(self.cfg.path("log_path"), encoding="utf-8") as f:
+            lines = [ln for ln in f.read().splitlines() if "間に合いません" in ln]
+        self.assertEqual(len(lines), 1)
+        self.assertIn("大村9R 帯 2-1-4 締切14:51", lines[0])
+
     def test_買い目が無い周でも動いていることが分かる行を出す(self):
         r = self.runner("check", [day([race(close="18:00")])])
         r.cycle()

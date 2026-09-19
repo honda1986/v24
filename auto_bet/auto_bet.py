@@ -55,6 +55,7 @@ class Runner:
         self.stop_path = cfg.path("stop_file")
         self.halt_reason = ""
         self._dry_seen = set()
+        self._late_said = set()
         self._last_touch = None
 
     def stopped(self):
@@ -79,6 +80,10 @@ class Runner:
 
         for w in res.warnings:
             self.log.event("見送った", w)
+        for key, why in res.late:        # 締切に間に合わなかったものは1度だけ言う
+            if key not in self._late_said and not self.store.has(key):
+                self._late_said.add(key)
+                self.log.event("見送った", why)
 
         # 何も無い周でも1行は出す。黙っていると、止まっているのか
         # 買い目が無いのか分からない

@@ -48,6 +48,11 @@ class Bet:
 class Result:
     bets: list
     warnings: list       # 人に見せる警告（点数が想定外、上限に達した、など）
+    late: list           # 間に合わなかった買い目（キー, 説明）
+
+
+# 締切を何分過ぎたぶんまで「間に合わなかった」として報せるか
+LATE_WINDOW = 30
 
 
 def _combos(race):
@@ -107,13 +112,13 @@ def select(day, done_keys, spent_yen, cfg, at):
     """
     warnings = []
     if not isinstance(day, dict):
-        return Result([], warnings)          # 今日の日付が days に無い日も落ちない
+        return Result([], warnings, [])      # 今日の日付が days に無い日も落ちない
 
     date = day.get("date")
     if not isinstance(date, str) or not date:
-        return Result([], warnings)
+        return Result([], warnings, [])
 
-    cands = []
+    cands, late = [], []
     seen = set()
     for kind, races in sources(day, cfg):
         for race in races:
@@ -132,7 +137,19 @@ def select(day, done_keys, spent_yen, cfg, at):
             # 締切まで N 分未満は投票しない（押している途中で締め切られるのを防ぐ）
             # 締切まで M 分を超えていても投票しない（オッズがまだ動く）
             # 大きく負（もう過ぎた）も、ここで黙って落ちる
-            if not (cfg.close_min_minutes <= minutes <= cfg.close_max_minutes):
+            if minutes < cfg.close_min_minutes:
+                # 買えなかった理由を残す。黙って飛ばすと「なぜ買わないのか」が
+                # 分からない。v24 の push が締切間際になった日はこれが出る
+                if minutes > -LATE_WINDOW:
+                    for combo in _combos(race):
+                        late.append((
+                            make_key(date, jcd, rno, combo, kind),
+                            f"{place}{rno}R {kind} {combo} 締切{close}: "
+                            f"間に合いませんでした（気づいた時点で"
+                            f"{'あと' if minutes >= 0 else ''}{minutes:.1f}分）"
+                        ))
+                continue
+            if minutes > cfg.close_max_minutes:
                 continue
 
             combos = _combos(race)
@@ -162,7 +179,7 @@ def select(day, done_keys, spent_yen, cfg, at):
     cands.sort(key=lambda b: (b.minutes, b.jcd, b.rno, b.kind, b.combo))
 
     if cfg.max_yen_per_day is None:
-        return Result(cands, warnings)
+        return Result(cands, warnings, late)
 
     # 1日の上限。使用額は bet_done.json の当日分から数えている
     left = cfg.max_yen_per_day - spent_yen
@@ -176,4 +193,4 @@ def select(day, done_keys, spent_yen, cfg, at):
             break
         bets.append(b)
         left -= b.yen
-    return Result(bets, warnings)
+    return Result(bets, warnings, late)
