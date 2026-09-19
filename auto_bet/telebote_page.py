@@ -183,6 +183,31 @@ class TelebotePage:
         except Exception:
             self.page.click(selector)
 
+    def dump(self, b, tag):
+        """いまの画面を残す。何が出ているか分からないと直しようがない
+
+        スクリーンショットと、URL・画面の文字を shots に置く。
+        """
+        if not self.shot_dir:
+            return
+        os.makedirs(self.shot_dir, exist_ok=True)
+        base = os.path.join(self.shot_dir, f"NG_{b.date}_{b.place}{b.rno}R_{tag}")
+        try:
+            self.page.screenshot(path=base + ".png", full_page=True)
+        except Exception:
+            pass
+        try:
+            text = self.page.inner_text("body")
+        except Exception as e:
+            text = f"（画面の文字を読めません: {e}）"
+        try:
+            with open(base + ".txt", "w", encoding="utf-8") as f:
+                f.write(f"URL: {self.page.url}\n")
+                f.write(f"題名: {self.page.title()}\n\n")
+                f.write(text[:4000])
+        except Exception:
+            pass
+
     def _shot(self, b, tag):
         if not self.shot_dir:
             return
@@ -199,17 +224,18 @@ class TelebotePage:
         着順のチェックボックスが出ているかで確かめる。
         """
         tried = []
-        for how in (self._by_place_then_url, self._by_modal, self._by_url):
+        # URL を直接開くのは最後。クリックで辿るほうが弾かれにくい
+        for how in (self._by_modal, self._by_place_then_url, self._by_url):
             try:
                 how(b)
                 if self.on_bet_page():
-                    if how.__name__ != "_by_place_then_url":
-                        print(f"   （{b.place}{b.rno}R は {how.__name__} で開きました）")
+                    print(f"   （{b.place}{b.rno}R は {how.__name__} で開きました）")
                     return how.__name__
-                tried.append(f"{how.__name__}: 舟券の画面に着かなかった")
+                tried.append(f"{how.__name__}: 舟券の画面に着かなかった（{self.page.url}）")
             except Exception as e:
                 tried.append(f"{how.__name__}: {type(e).__name__}: {e}")
-            self._safe_reset()        # トップへ戻してから次を試す
+            self.dump(b, how.__name__)   # 何が出ていたかを残す
+            self._safe_reset()           # トップへ戻してから次を試す
         raise BetAborted(f"{b.place}{b.rno}R の画面を開けません（" + " / ".join(tried) + "）")
 
     def on_bet_page(self, timeout=5000):
@@ -235,10 +261,22 @@ class TelebotePage:
         """場を選び、レース選択を開いて、その中から選ぶ。人の操作そのまま"""
         open_home(self.page)
         self._click(_sel("place_link", jcd=b.jcd, place=b.place))
+        if self.on_bet_page(timeout=3000) and self._is_race(b):
+            return                      # 場を選んだだけで目当てのレースだった
         chooser = (SELECTORS.get("race_chooser") or "").strip()
         if chooser:
-            self._click(chooser)
+            try:
+                self._click(chooser)
+            except Exception:
+                pass                    # すでにレース選択が出ていることもある
         self._set_lane(_sel("race_in_modal", rno=b.rno))
+
+    def _is_race(self, b):
+        """いま開いている画面が、目当てのレースかどうか"""
+        try:
+            return bool(re.search(rf"(?<![0-9]){b.rno}R", tight(self.page.inner_text("body"))))
+        except Exception:
+            return False
 
     def _by_url(self, b):
         """URL を直接。これが通るならいちばん確実なので、最後に残しておく"""
