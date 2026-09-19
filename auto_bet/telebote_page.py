@@ -236,24 +236,41 @@ class TelebotePage:
     def open_race(self, b):
         """レースの舟券画面まで行く
 
-        URL を直接開くとトップへ戻されることがある（場を選んでいない状態だと
-        弾かれる）。人と同じ順に辿るやり方から順に試し、着けたかどうかを
-        着順のチェックボックスが出ているかで確かめる。
+        場を選べば、締切がいちばん近いレースが最初から開く。買うのはたいてい
+        その締切間近のレースなので、ふだんはそれで着く。余計な操作は増やさない。
+
+        着いた先が目当てのレースでなかったときだけ、レース選択から選び直す。
+        着いたかどうかは URL の jyoCode / raceNo で確かめる。
         """
-        tried = []
-        # URL を直接開くのは最後。クリックで辿るほうが弾かれにくい
-        for how in (self._by_modal, self._by_place_then_url, self._by_url):
-            try:
-                how(b)
-                if self.on_bet_page() and self._is_race(b):
-                    print(f"   （{b.place}{b.rno}R は {how.__name__} で開きました）")
-                    return how.__name__
-                tried.append(f"{how.__name__}: 目当ての画面に着かなかった（{self.page.url}）")
-            except Exception as e:
-                tried.append(f"{how.__name__}: {type(e).__name__}: {e}")
-            self.dump(b, how.__name__)   # 何が出ていたかを残す
-            self._safe_reset()           # トップへ戻してから次を試す
-        raise BetAborted(f"{b.place}{b.rno}R の画面を開けません（" + " / ".join(tried) + "）")
+        open_home(self.page)
+        self._click(_sel("place_link", jcd=b.jcd, place=b.place))
+        if self.arrived(b):
+            return "場を選んだだけ"
+
+        # ここから先は、開いたのが別のレースだったときの立て直し
+        print(f"   （{b.place}{b.rno}R ではなく {self.page.url} が開いたので選び直します）")
+        try:
+            self._open_chooser()
+            self._pick_race(b)
+            self.page.wait_for_timeout(1000)
+            if self.arrived(b):
+                return "レース選択から"
+        except Exception as e:
+            print(f"   （レース選択で失敗: {type(e).__name__}: {e}）")
+        self.dump(b, "レース選択")
+
+        url = (SELECTORS.get("race_url") or "").strip()
+        if url:
+            self.page.goto(url.format(jcd=b.jcd, rno=b.rno), timeout=TIMEOUT_MS)
+            if self.arrived(b):
+                return "URL"
+        self.dump(b, "URL")
+        self._safe_reset()
+        raise BetAborted(f"{b.place}{b.rno}R の画面を開けません（いま {self.page.url}）")
+
+    def arrived(self, b, timeout=5000):
+        """舟券の画面に着いていて、それが目当てのレースかどうか"""
+        return self.on_bet_page(timeout=timeout) and self._is_race(b)
 
     def on_bet_page(self, timeout=5000):
         mark = (SELECTORS.get("bet_page_mark") or "").strip()
@@ -265,24 +282,23 @@ class TelebotePage:
         except Exception:
             return False
 
-    def _by_place_then_url(self, b):
-        """トップで場を選んでから、URL でレースへ。いちばん短い道"""
-        open_home(self.page)
-        self._click(_sel("place_link", jcd=b.jcd, place=b.place))
-        url = (SELECTORS.get("race_url") or "").strip()
-        if not url:
-            raise BetAborted("race_url が空です")
-        self.page.goto(url.format(jcd=b.jcd, rno=b.rno), timeout=TIMEOUT_MS)
+    def _is_race(self, b):
+        """いま開いている画面が、目当てのレースかどうか
 
-    def _by_modal(self, b):
-        """場を選び、レース選択を開いて、その中から選ぶ。人の操作そのまま"""
-        open_home(self.page)
-        self._click(_sel("place_link", jcd=b.jcd, place=b.place))
-        if self.on_bet_page(timeout=3000) and self._is_race(b):
-            return                      # 場を選んだだけで目当てのレースだった
-        self._open_chooser()
-        self._pick_race(b)
-        self.page.wait_for_timeout(1000)    # サイト側の遷移を待つ
+        URL に raceNo が入っているので、まずそれで見る。
+        無ければ画面の文字で見る（こちらは当てにならないので控え）。
+        """
+        url = self.page.url or ""
+        m = re.search(r"raceNo=0*([0-9]+)", url)
+        if m:
+            j = re.search(r"jyoCode=0*([0-9]+)", url)
+            if j and int(j.group(1)) != b.jcd:
+                return False
+            return int(m.group(1)) == b.rno
+        try:
+            return bool(re.search(rf"(?<![0-9]){b.rno}R", tight(self.page.inner_text("body"))))
+        except Exception:
+            return False
 
     def _open_chooser(self):
         """レース選択を開く。ボタンの名前は「4R 12:47」のように毎回変わる"""
@@ -308,36 +324,12 @@ class TelebotePage:
             pass
         self._set_lane(_sel("race_in_modal", rno=b.rno))
 
-    def _is_race(self, b):
-        """いま開いている画面が、目当てのレースかどうか
+    def fix_bet_type(self):
+        """勝式を3連単にし直す
 
-        URL に raceNo が入っているので、まずそれで見る。
-        無ければ画面の文字で見る（こちらは当てにならないので控え）。
-        """
-        url = self.page.url or ""
-        m = re.search(r"raceNo=0*([0-9]+)", url)
-        if m:
-            j = re.search(r"jyoCode=0*([0-9]+)", url)
-            if j and int(j.group(1)) != b.jcd:
-                return False
-            return int(m.group(1)) == b.rno
-        try:
-            return bool(re.search(rf"(?<![0-9]){b.rno}R", tight(self.page.inner_text("body"))))
-        except Exception:
-            return False
-
-    def _by_url(self, b):
-        """URL を直接。これが通るならいちばん確実なので、最後に残しておく"""
-        url = (SELECTORS.get("race_url") or "").strip()
-        if not url:
-            raise BetAborted("race_url が空です")
-        self.page.goto(url.format(jcd=b.jcd, rno=b.rno), timeout=TIMEOUT_MS)
-
-    def choose_trifecta(self):
-        """勝式を3連単にする
-
-        すでに3連単が選ばれていると、押すところが出ない・名前が変わることがある。
-        ここでの失敗は見逃して進み、確認画面の「3連単」の照合で拾う。
+        3連単は最初から選ばれているので、ふだんは触らない（触るほど事故が増える）。
+        組を入れられなかったときだけ、ここを通る。
+        確認画面でも「3連単」を照合しているので、間違ったまま買うことはない。
         """
         for name in ("bet_type_open", "bet_type_trifecta"):
             sel = (SELECTORS.get(name) or "").strip()
@@ -353,6 +345,14 @@ class TelebotePage:
         parts = [p for p in combo.split("-") if p]
         if len(parts) != 3:
             raise BetAborted(f"3連単の組として読めません: {combo!r}")
+        try:
+            self._put_combo(parts)
+        except Exception:
+            # 3連単の画面でなかったのかもしれない。直して一度だけやり直す
+            self.fix_bet_type()
+            self._put_combo(parts)
+
+    def _put_combo(self, parts):
         self._set_lane(_sel("lane1", d=parts[0]))
         self._set_lane(_sel("lane2", d=parts[1]))
         self._set_lane(_sel("lane3", d=parts[2]))
@@ -428,8 +428,7 @@ class TelebotePage:
         例外は握りつぶさない。呼び出し側がその周を打ち切る。
         """
         self.open_race(b)
-        self.choose_trifecta()
-        self.enter_combo(b.combo)
+        self.enter_combo(b.combo)      # 勝式は触らない。3連単は最初から選ばれている
         self.enter_amount(yen)
         self.to_confirm()
         self._shot(b, "confirm")
