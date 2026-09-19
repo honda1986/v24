@@ -45,7 +45,8 @@ SELECTORS = {
     "total_amount": "role=textbox",        # 確認画面で打ち直す合計金額
     "submit": "role=button[name=\"投票\"]",
     "done_mark": "text=場を変更して投票",   # 投票完了の印
-    "logged_in_mark": "text=マイページ",    # ログイン済みのときだけ出るもの
+    # ログイン済みのときだけ出るもの。|| で区切ると、どれか1つ出ていれば良い
+    "logged_in_mark": "text=マイページ || text=購入残高 || text=ログアウト",
 }
 
 # 確認画面の合計欄の書き方。ここが変わったら直す
@@ -305,13 +306,21 @@ def open_top(page, url):
     page.goto(url, timeout=TIMEOUT_MS)
 
 
-def check_logged_in(page):
-    """ログイン済みか。logged_in_mark が空なら None（判断しない）"""
-    mark = (SELECTORS.get("logged_in_mark") or "").strip()
-    if not mark:
+def check_logged_in(page, timeout=5000):
+    """ログイン済みか。logged_in_mark が空なら None（判断しない）
+
+    || で区切られた候補のどれか1つでも出ていればログイン済みとみなす。
+    画面の作りが変わって印が見つからないこともあるので、
+    False を「確実にログアウト」と決めつけず、人に聞く側で受け止めること。
+    """
+    marks = [m.strip() for m in (SELECTORS.get("logged_in_mark") or "").split("||")]
+    marks = [m for m in marks if m]
+    if not marks:
         return None
-    try:
-        page.wait_for_selector(mark, timeout=TIMEOUT_MS)
-        return True
-    except Exception:
-        return False
+    for m in marks:
+        try:
+            page.wait_for_selector(m, timeout=timeout)
+            return True
+        except Exception:
+            continue
+    return False

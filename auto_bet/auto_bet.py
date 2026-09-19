@@ -163,8 +163,8 @@ class Runner:
             self.log.event("見送った", f"画面を開き直せません（{type(e).__name__}: {e}）")
             return "ok"
         if alive is False:
-            self.halt_reason = ("★ログインが切れました。"
-                                "--mode login をやり直してから動かしてください")
+            self.halt_reason = ("★ログインが切れたまま入り直せませんでした。"
+                                "Chrome で手でログインしてから、動かし直してください")
             return "halt"
         return "ok"
 
@@ -213,7 +213,10 @@ def run_login(cfg, log):
         page.goto(cfg.telebote_url)
         log.event("ログイン待ち", cfg.telebote_url)
         print("\nこの Chrome で手でログインしてください。")
-        print("加入者番号・暗証番号は保存しません。ログイン状態だけがプロファイルに残ります。")
+        print("加入者番号・暗証番号は保存しません。")
+        print("★テレボートは Chrome を閉じるとログインが切れます。")
+        print("  そのため、普段は login を使わず、dry / live を動かしたときに")
+        print("  開いた Chrome でログインしてください（最初に聞きます）。")
         print(f"プロファイル: {cfg.path('profile_dir')}")
         try:
             input("\n終わったら Enter を押してください（Chrome を閉じます）... ")
@@ -231,11 +234,42 @@ def make_bet_fn(cfg, page):
     return bet_fn
 
 
-def make_keepalive_fn(cfg, page):
+def make_keepalive_fn(cfg, page, log):
     def keepalive_fn():
         telebote_page.open_top(page, cfg.telebote_url)
-        return telebote_page.check_logged_in(page)
+        if telebote_page.check_logged_in(page) is not False:
+            return True
+        log.event("見送った", "★ログインが切れました。手でログインし直してください")
+        return ensure_logged_in(cfg, page)
     return keepalive_fn
+
+
+def ensure_logged_in(cfg, page, tries=2):
+    """ログインを確かめ、切れていたら、開いている Chrome で手でログインしてもらう
+
+    テレボートは Chrome を閉じるとログインが切れる（セッションが残らない）。
+    だから login モードで入れておくことはできず、ここで入ってもらって、
+    同じ画面のまま投票へ進む。
+
+    印が見つからないだけの可能性もあるので、何度か聞いたら人の判断を通す。
+    無人で動かしているとき（画面から入力できないとき）は False を返して止める。
+    """
+    for i in range(tries):
+        if telebote_page.check_logged_in(page) is not False:
+            return True
+        if not sys.stdin or not sys.stdin.isatty():
+            return False                      # 無人。勝手に進まない
+        print("\nログインが確認できません。")
+        print("いま開いている Chrome で、手でログインしてください。")
+        print("★この Chrome は閉じないでください（閉じるとログインが切れます）")
+        if i == tries - 1:
+            print("（ログイン済みならそのまま Enter。このまま進みます）")
+        try:
+            input("終わったら Enter を押してください（やめるときは Ctrl+C）... ")
+        except EOFError:
+            return False
+        telebote_page.open_top(page, cfg.telebote_url)
+    return True                               # 人が「入っている」と言うなら従う
 
 
 def main(argv=None):
@@ -300,13 +334,13 @@ def main(argv=None):
         with browser.open_context(cfg) as (_ctx, page):
             print(f"{cfg.telebote_url} を開きます")
             telebote_page.open_top(page, cfg.telebote_url)   # ここを起点にする
-            if telebote_page.check_logged_in(page) is False:
-                print("ログインが切れているようです。--mode login をやり直してください。")
-                log.event("終了", "ログインが切れている")
+            if not ensure_logged_in(cfg, page):
+                print("ログインが確認できないので止めます。")
+                log.event("終了", "ログインしていない")
                 return 2
             runner = Runner(cfg, store, args.mode, log,
                             bet_fn=make_bet_fn(cfg, page),
-                            keepalive_fn=make_keepalive_fn(cfg, page))
+                            keepalive_fn=make_keepalive_fn(cfg, page, log))
             return runner.loop(once=args.once)
     except browser.BrowserUnavailable as e:
         print(e)

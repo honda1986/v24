@@ -215,7 +215,7 @@ class TestCycle(Base):
         r = self.runner("live", [day([race(close="18:00")])], bet_fn=FakeBetter())
         r.keepalive_fn = lambda: False
         self.assertEqual(r.cycle(), "halt")
-        self.assertIn("ログインが切れました", r.halt_reason)
+        self.assertIn("ログインが切れたまま", r.halt_reason)
 
     def test_開き直しに失敗しても落ちない(self):
         def boom():
@@ -240,6 +240,40 @@ class TestCycle(Base):
         r = self.runner("live", [day([race()])], bet_fn=fake)
         self.assertEqual(r.loop(once=True), 0)
         self.assertEqual(len(fake.calls), 1)
+
+
+class TestEnsureLogin(Base):
+    """テレボートは Chrome を閉じるとログインが切れるので、開いたまま入ってもらう"""
+
+    def setUp(self):
+        super().setUp()
+        self.orig = telebote_page.check_logged_in, telebote_page.open_top, auto_bet.sys
+        self.addCleanup(self.restore)
+        telebote_page.open_top = lambda page, url: None
+
+        class NoTty:
+            def isatty(self):
+                return False
+
+        class FakeSys:
+            stdin = NoTty()
+
+        auto_bet.sys = FakeSys()
+
+    def restore(self):
+        telebote_page.check_logged_in, telebote_page.open_top, auto_bet.sys = self.orig
+
+    def test_ログイン済みならそのまま進む(self):
+        telebote_page.check_logged_in = lambda page, **k: True
+        self.assertTrue(auto_bet.ensure_logged_in(self.cfg, object()))
+
+    def test_判断できないときも進む(self):
+        telebote_page.check_logged_in = lambda page, **k: None
+        self.assertTrue(auto_bet.ensure_logged_in(self.cfg, object()))
+
+    def test_無人のときは勝手に進まない(self):
+        telebote_page.check_logged_in = lambda page, **k: False
+        self.assertFalse(auto_bet.ensure_logged_in(self.cfg, object()))
 
 
 class TestMain(Base):
