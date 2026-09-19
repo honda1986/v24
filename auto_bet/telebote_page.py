@@ -24,11 +24,14 @@ import unicodedata
 # 画面の場所。codegen の記録から起こしたもの
 # --------------------------------------------------------------------------
 SELECTORS = {
-    # レースは URL で直接開ける。jyoCode は v24 の jcd と同じ番号
-    # ★1桁の場（浜名湖6・蒲郡7・常滑8・津9）で 06 と 6 のどちらかは未確認
+    # ★レースの開き方。URL を直接開くとトップへ戻されることがあるので、
+    #   「トップ → 場を選ぶ → （必要ならレースを選ぶ）」と人と同じ順に辿る。
+    #   URL は場を選んだ後でだけ使う
     "race_url": "https://bu.tbbr.jp/bet?hatsubaiKbn=0&jyoCode={jcd:02d}&raceNo={rno:02d}",
-    "place_link": "text={place}",          # race_url が使えないときの控え
-    "race_link": "text={rno}R",            # 同上
+    "place_link": "text={place}",          # トップの場のカード
+    "race_chooser": "text=/^[0-9]+R\\s/",  # 場の画面で、レース選択を開くところ（例「4R 9:50」）
+    "race_in_modal": "[data-testid=modal] >> text=/^{rno}R/",   # その中の、買いたいレース
+    "bet_page_mark": "[id^='bet1-']",      # 舟券の画面に着いた印（着順のチェックボックス）
     # 勝式を3連単にする。押すところ → 出てくる中から選ぶところ
     "bet_type_open": "role=button[name=\"連単\"]",
     "bet_type_trifecta": "role=radio[name=\"3連単\"]",
@@ -85,16 +88,17 @@ class BetUncertain(Exception):
     """
 
 
-# 空だと dry / live が始められないもの。race_url があれば place_link / race_link は要らない
-REQUIRED = ("lane1", "lane2", "lane3", "amount", "to_confirm", "confirm_area", "submit")
+# 空だと dry / live が始められないもの
+REQUIRED = ("place_link", "lane1", "lane2", "lane3", "amount",
+            "to_confirm", "confirm_area", "submit")
 
 
 def missing_selectors():
     """埋まっていない SELECTORS を並べる（起動時に見て、動く前に止めるため）"""
     miss = [k for k in REQUIRED if not (SELECTORS.get(k) or "").strip()]
-    if not (SELECTORS.get("race_url") or "").strip():
-        miss += [k for k in ("place_link", "race_link")
-                 if not (SELECTORS.get(k) or "").strip()]
+    if not (SELECTORS.get("race_url") or "").strip() \
+            and not (SELECTORS.get("race_in_modal") or "").strip():
+        miss.append("race_url か race_in_modal のどちらか")
     return miss
 
 
@@ -188,12 +192,60 @@ class TelebotePage:
 
     # ---- 手順 ------------------------------------------------------------
     def open_race(self, b):
+        """レースの舟券画面まで行く
+
+        URL を直接開くとトップへ戻されることがある（場を選んでいない状態だと
+        弾かれる）。人と同じ順に辿るやり方から順に試し、着けたかどうかを
+        着順のチェックボックスが出ているかで確かめる。
+        """
+        tried = []
+        for how in (self._by_place_then_url, self._by_modal, self._by_url):
+            try:
+                how(b)
+                if self.on_bet_page():
+                    if how.__name__ != "_by_place_then_url":
+                        print(f"   （{b.place}{b.rno}R は {how.__name__} で開きました）")
+                    return how.__name__
+                tried.append(f"{how.__name__}: 舟券の画面に着かなかった")
+            except Exception as e:
+                tried.append(f"{how.__name__}: {type(e).__name__}: {e}")
+            self._safe_reset()        # トップへ戻してから次を試す
+        raise BetAborted(f"{b.place}{b.rno}R の画面を開けません（" + " / ".join(tried) + "）")
+
+    def on_bet_page(self, timeout=5000):
+        mark = (SELECTORS.get("bet_page_mark") or "").strip()
+        if not mark:
+            return True
+        try:
+            self.page.wait_for_selector(mark, timeout=timeout)
+            return True
+        except Exception:
+            return False
+
+    def _by_place_then_url(self, b):
+        """トップで場を選んでから、URL でレースへ。いちばん短い道"""
+        open_home(self.page)
+        self._click(_sel("place_link", jcd=b.jcd, place=b.place))
         url = (SELECTORS.get("race_url") or "").strip()
-        if url:
-            self.page.goto(url.format(jcd=b.jcd, rno=b.rno), timeout=TIMEOUT_MS)
-        else:
-            self._click(_sel("place_link", jcd=b.jcd, place=b.place))
-            self._click(_sel("race_link", rno=b.rno))
+        if not url:
+            raise BetAborted("race_url が空です")
+        self.page.goto(url.format(jcd=b.jcd, rno=b.rno), timeout=TIMEOUT_MS)
+
+    def _by_modal(self, b):
+        """場を選び、レース選択を開いて、その中から選ぶ。人の操作そのまま"""
+        open_home(self.page)
+        self._click(_sel("place_link", jcd=b.jcd, place=b.place))
+        chooser = (SELECTORS.get("race_chooser") or "").strip()
+        if chooser:
+            self._click(chooser)
+        self._set_lane(_sel("race_in_modal", rno=b.rno))
+
+    def _by_url(self, b):
+        """URL を直接。これが通るならいちばん確実なので、最後に残しておく"""
+        url = (SELECTORS.get("race_url") or "").strip()
+        if not url:
+            raise BetAborted("race_url が空です")
+        self.page.goto(url.format(jcd=b.jcd, rno=b.rno), timeout=TIMEOUT_MS)
 
     def choose_trifecta(self):
         """勝式を3連単にする
