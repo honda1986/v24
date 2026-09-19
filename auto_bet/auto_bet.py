@@ -39,9 +39,6 @@ true にしてください。判断できないなら false のままで構い�
 dry モードなら、投票を押す直前まで全部動きます。"""
 
 
-KEEPALIVE_MINUTES = 10
-
-
 class Runner:
     """1周ぶんの流れ。画面操作は bet_fn として外から差し込む（テストは偽物を渡す）"""
 
@@ -153,8 +150,11 @@ class Runner:
         """
         if not self.keepalive_fn:
             return "ok"
+        every = self.cfg.keepalive_minutes
+        if not every:                     # 0 なら開き直さない
+            return "ok"
         if self._last_touch is not None:
-            if (at - self._last_touch).total_seconds() < KEEPALIVE_MINUTES * 60:
+            if (at - self._last_touch).total_seconds() < every * 60:
                 return "ok"
         self._last_touch = at
         try:
@@ -236,7 +236,7 @@ def make_bet_fn(cfg, page):
 
 def make_keepalive_fn(cfg, page, log):
     def keepalive_fn():
-        telebote_page.open_top(page, cfg.telebote_url)
+        telebote_page.open_home(page)       # ログイン画面へ戻すと切れる
         if telebote_page.check_logged_in(page) is not False:
             return True
         log.event("見送った", "★ログインが切れました。手でログインし直してください")
@@ -268,7 +268,7 @@ def ensure_logged_in(cfg, page, tries=2):
             input("終わったら Enter を押してください（やめるときは Ctrl+C）... ")
         except EOFError:
             return False
-        telebote_page.open_top(page, cfg.telebote_url)
+        telebote_page.open_home(page)         # ログイン後のトップで確かめる
     return True                               # 人が「入っている」と言うなら従う
 
 
@@ -338,6 +338,7 @@ def main(argv=None):
                 print("ログインが確認できないので止めます。")
                 log.event("終了", "ログインしていない")
                 return 2
+            telebote_page.open_home(page)   # ログイン後のトップを起点にする
             runner = Runner(cfg, store, args.mode, log,
                             bet_fn=make_bet_fn(cfg, page),
                             keepalive_fn=make_keepalive_fn(cfg, page, log))

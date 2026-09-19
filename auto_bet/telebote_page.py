@@ -45,6 +45,10 @@ SELECTORS = {
     "total_amount": "role=textbox",        # 確認画面で打ち直す合計金額
     "submit": "role=button[name=\"投票\"]",
     "done_mark": "text=場を変更して投票",   # 投票完了の印
+    # ★ログイン後のトップ。生存確認も投票後の後始末も、必ずここへ戻る。
+    #   入口（config.json の telebote_url）はログイン画面なので、
+    #   そこへ戻るとログインが切れる
+    "home_url": "https://bu.tbbr.jp/top?hatsubaiKbn=0",
     # ログイン済みのときだけ出るもの。|| で区切ると、どれか1つ出ていれば良い
     "logged_in_mark": "text=マイページ || text=購入残高 || text=ログアウト",
 }
@@ -253,9 +257,13 @@ class TelebotePage:
             raise BetUncertain(f"投票を押したあたりで失敗: {type(e).__name__}: {e}") from e
 
     def reset(self):
-        """次のレースへ進む前に、分かっている場所へ戻す"""
-        if self.top_url:
-            self.page.goto(self.top_url, timeout=TIMEOUT_MS)
+        """次のレースへ進む前に、ログイン後のトップへ戻す
+
+        入口のURL（ログイン画面）へ戻すとログインが切れるので、そこへは戻らない。
+        """
+        url = (SELECTORS.get("home_url") or "").strip()
+        if url:
+            self.page.goto(url, timeout=TIMEOUT_MS)
 
     def _safe_reset(self):
         """投票が通った後の後始末。ここで転んでも投票の成否は変わらない"""
@@ -303,7 +311,20 @@ def bet(page, b, yen, live, shot_dir=None, top_url=""):
 
 
 def open_top(page, url):
+    """入口（ログイン画面）を開く。起動時に一度だけ"""
     page.goto(url, timeout=TIMEOUT_MS)
+
+
+def open_home(page):
+    """ログイン後のトップを開く。生存確認はこちらを使う
+
+    home_url が空なら、いまの画面を読み込み直すだけにする。
+    """
+    url = (SELECTORS.get("home_url") or "").strip()
+    if url:
+        page.goto(url, timeout=TIMEOUT_MS)
+    else:
+        page.reload(timeout=TIMEOUT_MS)
 
 
 def check_logged_in(page, timeout=5000):

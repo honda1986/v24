@@ -22,6 +22,7 @@ DEFAULTS = {
     "close_max_minutes": 25,
     "history_url": "https://raw.githubusercontent.com/honda1986/v24/main/history.json",
     "poll_seconds": 120,
+    "keepalive_minutes": 10,
     "telebote_url": "",
     "profile_dir": "chrome_profile",
     "use_installed_chrome": True,
@@ -50,6 +51,7 @@ class Config:
     close_max_minutes: float = 25
     history_url: str = DEFAULTS["history_url"]
     poll_seconds: int = 120
+    keepalive_minutes: int = 10
     telebote_url: str = ""
     profile_dir: str = "chrome_profile"
     use_installed_chrome: bool = True
@@ -130,6 +132,7 @@ def from_dict(d, base_dir="."):
         close_max_minutes=_as_num(d, "close_max_minutes", lo=0),
         history_url=_as_str(d, "history_url", required=True),
         poll_seconds=_as_int(d, "poll_seconds", lo=10),
+        keepalive_minutes=_as_int(d, "keepalive_minutes", lo=0),
         telebote_url=_as_str(d, "telebote_url"),
         profile_dir=_as_str(d, "profile_dir", required=True),
         use_installed_chrome=_as_bool(d, "use_installed_chrome"),
