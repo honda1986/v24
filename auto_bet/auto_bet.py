@@ -84,13 +84,14 @@ class Runner:
     """1周ぶんの流れ。画面操作は bet_fn として外から差し込む（テストは偽物を渡す）"""
 
     def __init__(self, cfg, store, mode, log, bet_fn=None, keepalive_fn=None,
-                 fetch_fn=None, now_fn=None):
+                 cleanup_fn=None, fetch_fn=None, now_fn=None):
         self.cfg = cfg
         self.store = store
         self.mode = mode
         self.log = log
         self.bet_fn = bet_fn
         self.keepalive_fn = keepalive_fn
+        self.cleanup_fn = cleanup_fn
         self.fetch_fn = fetch_fn or (lambda url: history_source.fetch(url))
         self.now_fn = now_fn or now
         self.stop_path = cfg.path("stop_file")
@@ -179,8 +180,13 @@ class Runner:
             if self.mode == "dry":
                 self._dry_seen.add(b.key)
                 self._dry_races.add((b.date, b.jcd, b.rno, b.kind))
-                self.log.bet(b, "見送った", "確認画面まで（押していません）。"
-                                            "★ベットリストに1件残ります")
+                cleaned = self.cleanup_fn() if self.cleanup_fn else None
+                note = "確認画面まで（押していません）"
+                if cleaned is True:
+                    note += "。ベットリストは片付けました"
+                elif cleaned is False:
+                    note += "。★ベットリストに1件残っています"
+                self.log.bet(b, "見送った", note)
                 continue
 
             if not pressed:
@@ -290,6 +296,21 @@ def make_bet_fn(cfg, page):
         return telebote_page.bet(page, b, yen, live,
                                  shot_dir=shot_dir, top_url=cfg.telebote_url)
     return bet_fn
+
+
+def make_cleanup_fn(page, log):
+    """dry のあと、ベットリストに残った買い目を片付ける"""
+    def cleanup_fn():
+        try:
+            ok = telebote_page.clear_slip(page)
+        except Exception as e:
+            log.event("見送った", f"ベットリストを片付けられません（{e}）")
+            return False
+        if not ok:
+            log.event("見送った", "★ベットリストに残りがあります。"
+                                  "テレボートの画面で消してください")
+        return ok
+    return cleanup_fn
 
 
 def make_keepalive_fn(cfg, page, log):
@@ -431,6 +452,7 @@ def main(argv=None):
             runner = Runner(cfg, store, args.mode, log,
                             bet_fn=make_bet_fn(cfg, page),
                             keepalive_fn=make_keepalive_fn(cfg, page, log),
+                            cleanup_fn=make_cleanup_fn(page, log),
                             fetch_fn=fetch_fn)
             return runner.loop(once=args.once)
     except browser.BrowserUnavailable as e:

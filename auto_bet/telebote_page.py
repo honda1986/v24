@@ -68,6 +68,11 @@ SELECTORS = {
     "back_to_top": "text=場を変更して投票",
     # ベットリストの残り件数を読むところ（見出しの横に数字が出る）
     "slip_badge": "text=ベットリスト",
+    # ★dry のあと、残った買い目を片付けるため。中身は推測なので、
+    #   効かなければ手で消してもらう（消せたかは件数で確かめる）
+    "slip_open": "text=ベットリスト",
+    "slip_clear": ("text=全て削除 || text=すべて削除 || text=全削除 || text=全件削除 "
+                   "|| text=クリア || role=button[name=\"削除\"]"),
     # ログイン済みのときだけ出るもの。|| で区切ると、どれか1つ出ていれば良い
     "logged_in_mark": "text=マイページ || text=購入残高 || text=ログアウト",
 }
@@ -597,6 +602,32 @@ def slip_left(page):
         return None
     m = re.search(r"([0-9]+)", tight(text))
     return int(m.group(1)) if m else 0
+
+
+def clear_slip(page):
+    """ベットリストを空にする
+
+    dry は投票を押さないので、試すたびに1件残る。残っていると、次に
+    追加しても確認画面に載らない（合計ベット数が空・合計金額0円になる）。
+
+    消し方は推測なので、消せたかどうかは件数で確かめる。
+    駄目なら False を返し、手で消してもらう。
+    """
+    if not slip_left(page):
+        return True
+    for name in ("slip_open", "slip_clear"):
+        sel = (SELECTORS.get(name) or "").strip()
+        if not sel:
+            continue
+        for one in [x.strip() for x in sel.split("||") if x.strip()]:
+            try:
+                page.wait_for_selector(one, timeout=3000)
+                page.click(one)
+                page.wait_for_timeout(700)
+                break
+            except Exception:
+                continue
+    return not slip_left(page)
 
 
 def open_top(page, url):
