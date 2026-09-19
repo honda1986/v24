@@ -289,7 +289,17 @@ class TelebotePage:
         try:
             with open(base + ".txt", "w", encoding="utf-8") as f:
                 f.write(f"URL: {self.page.url}\n")
-                f.write(f"題名: {self.page.title()}\n\n")
+                f.write(f"題名: {self.page.title()}\n")
+                f.write(f"ベットリスト: {slip_left(self.page)} 件\n")
+                try:
+                    tb = self.page.locator("table")
+                    f.write(f"表の数: {tb.count()}\n")
+                    for i in range(min(tb.count(), 8)):
+                        one = tight(tb.nth(i).inner_text())[:80]
+                        f.write(f"  表{i}: {one}\n")
+                except Exception as e:
+                    f.write(f"表を読めません: {e}\n")
+                f.write("\n---- 画面の文字 ----\n")
                 f.write(text[:4000])
         except Exception:
             pass
@@ -422,11 +432,19 @@ class TelebotePage:
         self._set_lane(_sel("lane3", d=parts[2]))
 
     def enter_amount(self, yen):
-        """口数（または金額）を入れて、投票へ進む"""
+        """口数（または金額）を入れて、ベットリストに入れる"""
+        before = slip_left(self.page)
         self._fill(_sel("amount"), units_of(yen), "口数の欄")
         add = (SELECTORS.get("add_to_slip") or "").strip()
         if add:
             self._click(add)
+            self.page.wait_for_timeout(800)
+            after = slip_left(self.page)
+            # 入っていないまま先へ進むと、確認画面に何も載らない
+            if before is not None and after is not None and after <= before:
+                raise BetAborted(
+                    f"ベットリストに入りませんでした（{before}件のまま）。"
+                    "組か口数が受け付けられていないかもしれません")
 
     def to_confirm(self):
         self._click(_sel("to_confirm"))
@@ -521,8 +539,14 @@ class TelebotePage:
         if ng:
             self.dump(b, "照合できず")      # 何が出ていたかを残す
             self._safe_reset()
+            packed = tight(text)
+            if TOTAL_BETS.split("{")[0] not in packed and CONFIRM_KEY not in packed:
+                raise BetAborted(
+                    "確認画面に買い目が1件も載っていません"
+                    "（ベットリストに入っていないか、読む場所が違う）"
+                    f"｜読んだ文字: {packed[:120]}")
             raise BetAborted("確認画面が意図と一致しません: " + " / ".join(ng)
-                             + f"｜読んだ文字: {tight(text)[:120]}")
+                             + f"｜読んだ文字: {packed[:120]}")
 
         try:
             self.fill_total(yen)   # 合計金額まで入れる。押すのはこの次
