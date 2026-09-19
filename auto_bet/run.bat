@@ -12,6 +12,7 @@ echo     1) check   いま買うべきレースを見るだけ（ブラウザ無し）
 echo     2) dry     ブラウザを開き、確認画面まで進んで押さない
 echo     3) live    実際に投票する
 echo.
+echo     7) 金額や上限の設定を変える
 echo     8) ログの最後の30行を見る
 echo     9) テスト（サイトを触らずに確かめる）
 echo     0) 終わる
@@ -23,6 +24,7 @@ set /p N="番号を入れて Enter: "
 if "%N%"=="1" goto CHECK
 if "%N%"=="2" goto DRY
 if "%N%"=="3" goto LIVE
+if "%N%"=="7" goto SETTINGS
 if "%N%"=="8" goto LOG
 if "%N%"=="9" goto TEST
 if "%N%"=="0" goto END
@@ -43,6 +45,10 @@ set YES=
 set /p YES="よろしければ y を入れて Enter（やめるなら何も入れずに Enter）: "
 if /i not "%YES%"=="y" goto MENU
 call :RUN live
+goto MENU
+
+:SETTINGS
+python settings.py
 goto MENU
 
 :LOG

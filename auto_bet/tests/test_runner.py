@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import auto_bet                      # noqa: E402
 import betlog                        # noqa: E402
 import config as config_mod          # noqa: E402
+import settings as settings_mod      # noqa: E402
 import telebote_page                 # noqa: E402
 from bet_store import BetStore       # noqa: E402
 from jst import JST                  # noqa: E402
@@ -293,6 +294,40 @@ class TestEnsureLogin(Base):
     def test_無人のときは勝手に進まない(self):
         telebote_page.check_logged_in = lambda page, **k: False
         self.assertFalse(auto_bet.ensure_logged_in(self.cfg, object()))
+
+
+class TestSettings(Base):
+    """config.json をメニューで書き換える"""
+
+    def menu(self, *answers):
+        import builtins
+        seq, orig, path = list(answers), builtins.input, settings_mod.PATH
+        builtins.input = lambda *a: seq.pop(0)
+        settings_mod.PATH = self.cfg_path
+        self.addCleanup(lambda: (setattr(builtins, "input", orig),
+                                 setattr(settings_mod, "PATH", path)))
+        settings_mod.main()
+        return json.load(open(self.cfg_path, encoding="utf-8"))
+
+    def test_1点の金額を変えられる(self):
+        self.assertEqual(self.menu("1", "200", "0")["bet_yen"], 200)
+
+    def test_100円単位でない値は保存しない(self):
+        self.assertEqual(self.menu("1", "150", "0")["bet_yen"], 100)
+
+    def test_0を入れると無制限になる(self):
+        self.assertIsNone(self.menu("2", "0", "0")["max_yen_per_day"])
+
+    def test_穴側を買う設定にできる(self):
+        self.assertTrue(self.menu("5", "1", "0")["buy_ana"])
+
+    def test_覚書のキーは消さない(self):
+        with open(self.cfg_path, encoding="utf-8") as f:
+            d = json.load(f)
+        d["_覚書"] = "消えないこと"
+        with open(self.cfg_path, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False)
+        self.assertIn("_覚書", self.menu("1", "300", "0"))
 
 
 class TestMain(Base):
