@@ -525,6 +525,14 @@ class TelebotePage:
 
         例外は握りつぶさない。呼び出し側がその周を打ち切る。
         """
+        # ★先にベットリストを空にしておくこと。残っていると、追加しても
+        #   確認画面に載らない（合計ベット数が空・合計金額0円になる）
+        left = slip_left(self.page)
+        if left:
+            raise BetAborted(
+                f"ベットリストに {left} 件残っています。テレボートの画面で"
+                "先に空にしてください（残っていると確認画面に載りません）")
+
         try:
             self.open_race(b)
             self.enter_combo(b.combo)  # 勝式は触らない。3連単は最初から選ばれている
