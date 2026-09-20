@@ -282,3 +282,47 @@ for bar in (100, 110, 120, 130):
           f"→ 偶然なら {len(GG)*pa*pb:5.1f}通り  実際 {both:3}通り")
 ra = np.argsort(np.argsort(GG[:, 0])); rb = np.argsort(np.argsort(GG[:, 1]))
 print(f"   順位相関 {np.corrcoef(ra, rb)[0, 1]:+.3f}")
+
+
+print("\n\n############ 10. 大村9R型の検証（2026-09-21）############")
+print("   「同じ1着・2着で、もっと人気の3着候補がいるのに人気薄を買う」")
+print("   「窓(8〜15倍)の外に、もっと p/q が高い組がいる」")
+print("   この2つが買い目の良し悪しに効いているかを、両期間で見る。")
+
+# --- 同じ (レース, 1着, 2着) の中で、自分より q が高い組がいくつあるか ---
+ri = C["race"]
+q_ = C["q"]
+key = (ri * 100 + C["first"] * 10 + C["second"]).astype(np.int64)
+o = np.lexsort((-q_, key))
+rank = np.empty(len(q_), dtype=np.int64)
+ks = key[o]
+new = np.r_[True, ks[1:] != ks[:-1]]
+grp = np.cumsum(new) - 1
+start = np.flatnonzero(new)
+rank[o] = np.arange(len(q_)) - start[grp]
+
+# --- そのレースで「1着≠1号艇・8倍未満」に、自分より p/q が高い組がいるか ---
+R = ri.astype(np.int64)
+best_out = np.full(int(R.max()) + 1, -1.0)
+out = OK & (C["first"] != 1) & (C["odds"] < 8) & (pq > 1.0)
+np.maximum.at(best_out, R[out], pq[out])
+daimura = best_out[R] > pq        # 窓の外にもっと良い組がある＝大村9R型
+
+def two(m, lab):
+    line = f"   {lab:<30}|"
+    for mk in (X_, B_):
+        nr, nb, nh, r = roi(m & mk)
+        line += f" {nb:6,}点 的中{nh:4} {r:6.1f}% |" if nb >= 25 else f"{'(少)':>24}|"
+    print(line)
+
+for t in (1.0, 1.097, 1.15):
+    base = sel(np.ones(len(A), bool), 8, 15, t, 8)
+    print(f"\n   --- 穴側の窓 / p/q>{t} ---")
+    print(f"   {'':<30}|{'探索 2026/02-09':>24}|{'独立 2025/05-2026/01':>24}")
+    for r in (0, 1, 2):
+        two(base & (rank == r),
+            f"同じ1-2着で自分より人気 {r}つ" + ("（大村型）" if r == 2 else ""))
+    two(base & daimura, "窓の外にもっと p/q が高い組")
+    two(base & ~daimura, "自分がそのレースで p/q 最大")
+
+print("\n   ★どれも結果を見てから切った切り口。採用するなら事前登録して測り直すこと。")
