@@ -213,6 +213,49 @@ class TestHistorySource(unittest.TestCase):
         self.assertIsNone(history_source.pick_day({}, DATE))
 
 
+class TestLocalHistory(unittest.TestCase):
+    """同じ PC の history.json を直接読む（v24 を PC へ移したとき）"""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.path = os.path.join(self.dir, "history.json")
+
+    def put(self, text):
+        with open(self.path, "w", encoding="utf-8") as f:
+            f.write(text)
+
+    def test_URLかどうかを見分ける(self):
+        self.assertTrue(history_source.is_url("https://example.invalid/h.json"))
+        self.assertFalse(history_source.is_url(r"C:\boat\v24\history.json"))
+        self.assertFalse(history_source.is_url("history.json"))
+        self.assertFalse(history_source.is_url("/home/boat/history.json"))
+
+    def test_読める(self):
+        json.dump({"days": [day([race()])]}, open(self.path, "w", encoding="utf-8"),
+                  ensure_ascii=False)
+        data, why = history_source.fetch(self.path)
+        self.assertEqual(why, "")
+        self.assertEqual(history_source.pick_day(data, DATE)["date"], DATE)
+
+    def test_書き込み中なら取れなかったことにする(self):
+        self.put('{"days": [{"dat')
+        data, why = history_source.fetch(self.path)
+        self.assertIsNone(data)
+        self.assertIn("書き込み中", why)
+
+    def test_ファイルが無くても落ちない(self):
+        data, why = history_source.fetch(os.path.join(self.dir, "まだ無い.json"))
+        self.assertIsNone(data)
+        self.assertIn("ありません", why)
+
+    def test_日本語が化けない(self):
+        d = day([race(place="びわこ")])
+        json.dump({"days": [d]}, open(self.path, "w", encoding="utf-8"),
+                  ensure_ascii=False)
+        data, _ = history_source.fetch(self.path)
+        self.assertEqual(data["days"][0]["picks"][0]["place"], "びわこ")
+
+
 class TestBetStore(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()

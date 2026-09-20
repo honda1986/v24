@@ -11,11 +11,43 @@ URL の末尾に毎回変わるクエリ（?t=<epoch>）を必ず付ける。
 これは仕組み上の限界で、実害は「たまに買えない」だけ。買いすぎる方には転ばない。
 """
 import json
+import os
+import re
 import time
 import urllib.error
 import urllib.request
 
 TIMEOUT = 20
+
+
+def is_url(src):
+    """http:// などで始まっていれば URL。それ以外はファイルの場所とみなす
+
+    Windows の "C:\\boat\\v24\\history.json" は URL ではない（"://" が無い）。
+    """
+    return bool(re.match(r"^[A-Za-z][A-Za-z0-9+.\-]*://", str(src)))
+
+
+def read_file(path):
+    """同じ PC の history.json を直接読む（v24 も PC で動かしている場合）
+
+    ★yosou が書いている最中に読むと、途中までの JSON を読むことがある。
+      そのときは取れなかったことにして、次の周に回す。
+    """
+    if str(path).lower().startswith("file://"):
+        path = str(path)[7:].lstrip("/") if os.name == "nt" else str(path)[7:]
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return None, f"ファイルがありません: {path}"
+    except (OSError, UnicodeDecodeError) as e:
+        return None, f"読めず: {e}"
+    except json.JSONDecodeError as e:
+        return None, f"書き込み中かもしれません（{e}）"
+    if not isinstance(data, dict) or not isinstance(data.get("days"), list):
+        return None, "形が違う（days が無い）"
+    return data, ""
 
 
 def bust(url, t=None):
@@ -28,7 +60,10 @@ def fetch(url, timeout=TIMEOUT, opener=urllib.request.urlopen):
     """取れたら dict、取れなければ (None, 理由)
 
     ネットが切れていても落ちないこと。その周は何もせず次へ。
+    URL でなければ、同じ PC のファイルとして読む（キャッシュの遅れが無くなる）。
     """
+    if not is_url(url):
+        return read_file(url)
     req = urllib.request.Request(
         bust(url),
         headers={
