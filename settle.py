@@ -39,17 +39,26 @@ PQ_MIN = 1.05          # select_rule と同じ。補正なしで買ったとき�
 #   しまい、「確定オッズでも基準を満たしたまま」がほぼ素通りの数字になる。
 #   ★2026-09-20 より前に買った記録は 1.097/1.078 で選ばれているので、
 #     新しい基準で見ると厳しめに出る（見落としではなく安全側のずれ）。
-PQ_BAND = {"g+h": 1.15, "g": 1.11, "base": PQ_MIN}
-# ★しきい値を上げた日。これより前の記録は 1.097/1.078 で選ばれているので、
-#   その日以前と以後を同じ基準で数えてはいけない。
-SWITCH = "20260920"
-PQ_BAND_OLD = {"g+h": 1.097, "g": 1.078, "base": PQ_MIN}
+# ★帯のしきい値は途中で変えている。買った当時の基準で見ないと、
+#   「確定オッズでも基準を満たしたまま」の数字が二重にずれる。
+#   新しい世代を前に足すこと（date >= start の最初のものを使う）。
+#   ★20260921 は切り替え日なので 1.15 で買ったぶんが少し混じりうる。
+#     1.14 との差は小さいので、世代はこの粒度で足りる。
+BAND_ERAS = [
+    ("20260921", {"g+h": 1.14, "g": 1.11, "base": PQ_MIN}),   # 窓を4〜15分に
+    ("00000000", {"g+h": 1.097, "g": 1.078, "base": PQ_MIN}),
+]
+# ★穴側の記録を数え始める日。これ以前は別ルール（1.097・通知して買った）や、
+#   別の窓（4〜30分）で拾ったぶんなので混ぜない（ana_howto.md §8 の事前登録）。
+SWITCH = "20260921"
 
 
 def band_th(date, pick):
     """その買い目が実際に選ばれたときのしきい値"""
-    tbl = PQ_BAND if (date or "") > SWITCH else PQ_BAND_OLD
-    return tbl.get(pick.get("rule"), PQ_MIN)
+    for start, tbl in BAND_ERAS:
+        if (date or "") >= start:
+            return tbl.get(pick.get("rule"), PQ_MIN)
+    return PQ_MIN
 PQ_ANA = 1.15          # 穴側(試験)のしきい値。select_rule.ANA_PQ_MIN と同じ
                        # ★2026-09-20 に 1.097 から変更。それ以前の記録を
                        #   混ぜて数えると基準が揃わないので注意
@@ -247,7 +256,7 @@ def main():
     if ana or ana_old:
         acost = sum(p.get("cost") or 0 for p in adone)
         aret = sum(p.get("ret") or 0 for p in adone)
-        print(f"\n穴側(試験・シャドー / p/q>{PQ_BAND['g+h']} / {SWITCH} より後) "
+        print(f"\n穴側(試験・シャドー / p/q>1.15 / {SWITCH} より後) "
               f"{len(ana)}レース "
               f"{sum(len(p.get('buys') or []) for p in ana)}点 / 確定 {len(adone)}レース")
         if ana_old:

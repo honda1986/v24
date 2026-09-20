@@ -49,7 +49,16 @@ SITE = "history.json"      # 予想サイト(index.html)が読む
 MODEL_DIR = "model"
 CACHE_DIR = "cache"
 STATE_DIR = "state"
-WIN_HI = 30        # 締切まで何分以内を対象にするか
+# ★2026-09-21: 30 → 15 に狭めた。
+#   広い窓は「3分おきに8〜9回オッズを取り直し、どこか1回でも p/q が閾値を
+#   超えたら買う」形になっていて、実質「9回の最大値」を拾っていた。
+#   実測（history.json 94点）では 通知時→確定で オッズ中央 0.962倍・
+#   p/q 中央 1.111→1.087・61%の点が下がり、**確定オッズでも基準を満たしたまま
+#   なのは53%**。つまり残り47%は「たまたま高かった瞬間」を拾っていた。
+#   バックテストは確定オッズ1回で判定しているので、締切に寄せるほど近づく。
+#   ★狭めると1レースを見る回数が 8〜9回 → 3〜4回 に減り、買い目も減る。
+#     そのぶん PQ_MIN_GH を 1.15 → 1.14 に下げて相殺した（band_howto.md §15）。
+WIN_HI = 15        # 締切まで何分以内を対象にするか
 WIN_LO = 4         # これより締切が近いレースは投票が間に合わないので見送る
 BET_YEN = 100      # 1点あたりの賭け金
 VENUE = {1: "桐生", 2: "戸田", 3: "江戸川", 4: "平和島", 5: "多摩川", 6: "浜名湖",
@@ -195,7 +204,7 @@ def top_combos(cp, q, odds, n=TOP_N):
 
 def site_log(date, place, jcd, rno, close, buys, cp, q, odds, wave, wind, skipped,
              lanes=None, p1=None, q1=None, nmot=None, buys_alt=None,
-             rule="base", top=None):
+             rule="base", top=None, left=None):
     """index.html が読む history.json に、この回の結果を足す。
 
     ★1レース通知するたびに書いて commit する。まとめて最後に書くと、
@@ -214,6 +223,10 @@ def site_log(date, place, jcd, rno, close, buys, cp, q, odds, wave, wind, skippe
         if not any(p["jcd"] == jcd and p["rno"] == rno for p in day["picks"]):
             day["picks"].append({
                 "jcd": jcd, "place": place, "rno": rno, "close": close,
+                # ★締切まで何分の時点で判定したか。窓(WIN_LO〜WIN_HI)を変えた
+                #   ときに「目減りがどれだけ減ったか」を実測で比べるために残す。
+                #   これが無いと窓の効果を後から測れない（2026-09-21 追加）。
+                "left": None if left is None else int(left),
                 "wave": None if wave is None else round(float(wave)),
                 "wind": None if wind is None else round(float(wind)),
                 "buys": [{"combo": F.COMBOS[i], "q": round(float(q[i]), 5),
@@ -251,7 +264,7 @@ def site_log(date, place, jcd, rno, close, buys, cp, q, odds, wave, wind, skippe
 
 
 def site_ana(date, place, jcd, rno, close, buy, cp, q, odds, wave, wind,
-             top=None, shadow=False):
+             top=None, shadow=False, left=None):
     """穴側(試験)を day["ana"] に残す。★picks には入れない。
 
     帯の成績と混ざると、どちらが効いているのか分からなくなる。
@@ -268,6 +281,7 @@ def site_ana(date, place, jcd, rno, close, buy, cp, q, odds, wave, wind,
         return
     ana.append({
         "jcd": jcd, "place": place, "rno": rno, "close": close,
+        "left": None if left is None else int(left),
         "wave": None if wave is None else round(float(wave)),
         "wind": None if wind is None else round(float(wind)),
         "buys": [{"combo": F.COMBOS[i], "q": round(float(q[i]), 5),
@@ -794,12 +808,12 @@ def main():
                                    else [F.COMBOS[i] for i in buy_alt]),
                          rule=("g+h" if (m2 is not None and m3 is not None)
                                else "g" if m2 is not None else "base"),
-                         top=tops)
+                         top=tops, left=left)
                 bought += 1
             if ok_ana:
                 site_ana(date, VENUE.get(jcd, str(jcd)), jcd, rno, net,
                          buy_ana, cp, q, odds, wave, wind, top=tops,
-                         shadow=ana_shadow)
+                         shadow=ana_shadow, left=left)
                 bought_ana += 1
             site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net,
                       "買い" if ok else "穴のみ",

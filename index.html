@@ -244,7 +244,9 @@ const SKIP_ORDER = ["淡水","波・風","帯の外／p/q不足","補正モデ�
 //   成績なので、混ぜて回収率を出さない（ana_howto.md §8 の事前登録）。
 //   ★切り替え日そのものも含めない。その日の早い時間帯は旧ルール（1.097）で
 //     動いていて、通知して買った記録がすでに入っているため。
-const ANA_AFTER = "20260920";
+//   ★2026-09-21 に窓を 4〜30分 → 4〜15分 に狭めたので、拾う母集団が変わった。
+//     事前登録を取り直し、この日より後だけを数える。
+const ANA_AFTER = "20260921";
 const yen = n => (n<0?"−":"") + "¥" + Math.abs(Math.round(n)).toLocaleString("ja-JP");
 const pct = n => (n*100).toFixed(1) + "%";
 const fmtDate = d => `${d.slice(0,4)}/${d.slice(4,6)}/${d.slice(6,8)}`;
