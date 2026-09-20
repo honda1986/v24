@@ -149,6 +149,65 @@ class TestSelect(unittest.TestCase):
         self.assertEqual(res.bets[0].key, "20260918-24-9-2-1-4-帯")
 
 
+class TestShadow(unittest.TestCase):
+    """穴側のシャドー（通知せず記録だけ）を買わないこと
+
+    ★ここは間違えると実弾で誤爆する。
+      yosou.py は穴側を既定で「記録だけ」にし、"shadow": true を付けて
+      history.json に残す。auto_bet は ntfy を見ておらず history.json を
+      直接読むので、**通知を止めただけでは止まらない**。この印を見て
+      弾くのが唯一の歯止め（selector.sources）。
+    """
+
+    def ana(self, races, picks=None):
+        return day(picks if picks is not None else [], ana=races)
+
+    def kinds(self, d, **over):
+        res = selector.select(d, set(), 0, cfg(buy_ana=True, **over), NOW)
+        return res.bets
+
+    def test_シャドーの穴は買わない(self):
+        d = self.ana([dict(race(rno=5, close="15:05"), shadow=True)])
+        self.assertEqual(self.kinds(d), [])
+
+    def test_shadowがfalseなら買う(self):
+        d = self.ana([dict(race(rno=5, close="15:05"), shadow=False)])
+        self.assertEqual([b.kind for b in self.kinds(d)], ["穴"])
+
+    def test_shadowキーが無い古い記録は買う(self):
+        """2026-09-20 より前の記録には印が無い。通知して買ったものなので買う"""
+        d = self.ana([race(rno=5, close="15:05")])
+        self.assertEqual([b.kind for b in self.kinds(d)], ["穴"])
+
+    def test_混ざっていたら生だけ買う(self):
+        d = self.ana([
+            dict(race(jcd=24, place="大村", rno=5, close="15:05"), shadow=True),
+            race(jcd=17, place="宮島", rno=6, close="15:06"),
+        ])
+        bets = self.kinds(d)
+        self.assertEqual([b.place for b in bets], ["宮島"])
+
+    def test_シャドーは穴の件数にも数えない(self):
+        """画面に「穴1件」と出ていると、買うつもりだと勘違いする"""
+        d = self.ana([dict(race(rno=5, close="15:05"), shadow=True)])
+        self.assertEqual(selector.summary(d, cfg(buy_ana=True), NOW)[:2], (0, 0))
+
+    def test_シャドーだけの日でも帯はふつうに買える(self):
+        d = self.ana([dict(race(rno=5, close="15:05"), shadow=True)],
+                     picks=[race()])
+        self.assertEqual([b.kind for b in self.kinds(d)], ["帯"])
+
+    def test_辞書でないものが混ざっていても落ちない(self):
+        d = self.ana(["こわれた記録", None,
+                      dict(race(rno=5, close="15:05"), shadow=True),
+                      race(jcd=17, place="宮島", rno=6, close="15:06")])
+        self.assertEqual([b.place for b in self.kinds(d)], ["宮島"])
+
+    def test_買わない設定なら印に関係なく買わない(self):
+        d = self.ana([race(rno=5, close="15:05")])
+        self.assertEqual(selector.select(d, set(), 0, cfg(), NOW).bets, [])
+
+
 class TestSummary(unittest.TestCase):
     def test_次に締め切られるレースを教える(self):
         d = day([race(close="15:00"), race(jcd=17, place="宮島", rno=3, close="16:30")])
