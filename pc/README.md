@@ -14,7 +14,29 @@ Windows PC（C:\boat）                         GitHub（honda1986/v24）
 
 ---
 
-## 1. PC の準備
+## 0. かんたん手順（ふつうはこれだけ）
+
+### ① 一度だけ、コマンドプロンプトに貼る
+
+```
+git config --global core.autocrlf false && git clone https://github.com/honda1986/v24.git C:\boat\v24
+```
+
+### ② `C:\boat\v24\pc\setup.bat` をダブルクリック
+
+venv・ライブラリ・v22・ログ置き場・通知の宛先を用意し、テストと試し運転まで
+やります。**通知もしないし push もしません。** 何度やり直しても壊れません。
+
+### ③ `C:\boat\v24\pc\tasks.bat` を右クリック →「管理者として実行」
+
+毎日の予定を登録して、1回動かしてログを見せます。ここまでで終わりです。
+
+うまくいかなかったら、画面に出た字をそのまま貼って相談してください。
+下の §1 以降は、中で何をしているかの説明です。
+
+---
+
+## 1. PC の準備（setup.bat が中でやっていること）
 
 ### 入れるもの
 
@@ -27,9 +49,12 @@ py -3.11 -m venv C:\boat\venv
 C:\boat\venv\Scripts\python -m pip install numpy lightgbm requests beautifulsoup4
 ```
 
-★**lightgbm はモデルを学習したときの版に合わせること。** 違う版だと予測値が
-わずかにずれます。Actions の実行ログの `Successfully installed lightgbm-x.y.z`
-を見て、`lightgbm==x.y.z` のように版を指定して入れてください。
+lightgbm は **4系**なら何でもよい。`model/lgb_mf.txt` は文字で書かれた
+モデル（`version=v4`）で、木の形がそのまま入っているので、4系のどれで読んでも
+同じ値が出ます。3系では読めません。
+
+`setup.bat` は入れたあとに**実際にモデルを読んでみて**、木の数を表示します。
+そこが通れば版の心配はいりません。
 
 ### フォルダ
 
@@ -82,7 +107,7 @@ fine-grained PAT（対象 `v24` だけ、Contents の Read and write、期限1�
 
 ## 2. タスクを登録する
 
-PowerShell を**管理者として実行**して:
+`pc\tasks.bat` を**右クリック →「管理者として実行」**。中でこれを叩いています:
 
 ```
 cd C:\boat\v24\pc
@@ -218,8 +243,8 @@ watchdog も同じで、main に入るまで鳴りません。
 
 段階1の比べ方: GitHub 側の通知（または history.json の `picks` / `ana`）と、
 PC の `--dry` のログに出る「★N点 …」「穴N点(試験) …」を突き合わせ、
-**レースと組の集合**が一致するか。ずれたら、まず lightgbm の版と
-文字コード（`PYTHONUTF8`）を疑ってください。
+**レースと組の集合**が一致するか。ずれたら、まず文字コード（`PYTHONUTF8`）と
+モーター純度（`motor/latest.json` の日付）を疑ってください。
 
 ---
 
