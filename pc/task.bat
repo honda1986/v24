@@ -8,6 +8,8 @@ rem   日本語の JSON がどこかで化ける。
 setlocal
 set PYTHONUTF8=1
 set BOAT=C:\boat
+rem Git を入れても PATH に入らないことがあるので、よくある置き場を足しておく
+set "PATH=%PATH%;C:\Program Files\Git\cmd;%LOCALAPPDATA%\Programs\Git\cmd"
 cd /d "%BOAT%\v24"
 "%BOAT%\venv\Scripts\python.exe" runner.py %* --v22 "%BOAT%\v22" --log-dir "%BOAT%\logs"
 exit /b %ERRORLEVEL%

@@ -44,8 +44,13 @@ def step(n, title):
 def run(args, cwd=None, quiet=False):
     """外のコマンドを1回叩く。(うまくいったか, 出力) を返す"""
     env = dict(os.environ, PYTHONUTF8="1")
-    p = subprocess.run(args, cwd=cwd, capture_output=True, text=True,
-                       encoding="utf-8", errors="replace", env=env)
+    try:
+        p = subprocess.run(args, cwd=cwd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", env=env)
+    except OSError as e:
+        # コマンドそのものが無いとき。ここで落とすと画面が真っ赤になって
+        # 何が悪いのか分からなくなるので、失敗として返すだけにする。
+        return False, f"{args[0]} を動かせません: {e}"
     out = (p.stdout or "") + (p.stderr or "")
     if not quiet and out.strip():
         for line in out.strip().splitlines()[-12:]:
@@ -62,15 +67,41 @@ def ng(msg, how=""):
 
 
 # --------------------------------------------------------------------------
+# Git を入れても PATH に入らないことがある（インストール時の選択による）。
+# よくある置き場を自分で見に行く。
+GIT_DIRS = [
+    r"C:\Program Files\Git\cmd",
+    r"C:\Program Files (x86)\Git\cmd",
+    os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Programs\Git\cmd"),
+    os.path.join(os.environ.get("PROGRAMFILES", ""), r"Git\cmd"),
+]
+
+
+def find_git():
+    """PATH に無ければ、よくある置き場から探して PATH に足す"""
+    ok, out = run(["git", "--version"], quiet=True)
+    if ok:
+        return True, out.strip()
+    for d in GIT_DIRS:
+        if d and os.path.exists(os.path.join(d, "git.exe")):
+            os.environ["PATH"] = os.environ.get("PATH", "") + os.pathsep + d
+            ok, out = run(["git", "--version"], quiet=True)
+            if ok:
+                return True, out.strip() + f"（{d} で見つけました）"
+    return False, ""
+
+
 def check_git():
     step(1, "Git があるか")
-    ok, out = run(["git", "--version"], quiet=True)
+    ok, out = find_git()
     if not ok:
         ng("Git for Windows が入っていません",
-           "https://git-scm.com/download/win から入れて、\n"
-           "もう一度 setup.bat をダブルクリックしてください。")
+           "コマンドプロンプトに貼って入れてください:\n"
+           "    winget install --id Git.Git -e\n"
+           "それができなければ https://git-scm.com/download/win から。\n"
+           "入れたあと、この setup.bat をもう一度ダブルクリック。")
         return False
-    say("  ○", out.strip())
+    say("  ○", out)
     return True
 
 
