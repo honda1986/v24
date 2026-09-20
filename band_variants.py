@@ -225,3 +225,47 @@ for mk, lab in ((X_, "探索"), (B_, "独立")):
     print(f"     {lab}: 現行{N:,}点 → 波風なしなら p/q>{PQ['g+h'][s].min():.3f} "
           f"で同じ{N:,}点・回収率 {(hit[s]*od[s]*100).mean():.1f}%"
           f"（現行 {(hit[m0]*od[m0]*100).mean():.1f}%）")
+
+print("\n\n############ 11. 波だけ / 風だけ 残した場合のしきい値 ############")
+have = (C["wave"] >= 0) & (C["wind"] >= 0)
+inq = (q >= 0.12) & (q < 0.25)
+POP = {
+    "現行(波0-2+風<4)": OK & inq,
+    "波だけ残す(波0-2)": (~tansui) & have & (C["wave"] < 3) & inq,
+    "風だけ残す(風<4)": (~tansui) & have & (C["wind"] < 4) & inq,
+    "どちらも省く": (~tansui) & inq,
+}
+for k, P in POP.items():
+    print(f"\n  --- {k} ---  母集団 探索{int((P&X_).sum()):,}点 / "
+          f"独立{int((P&B_).sum()):,}点")
+    print(f"    {'p/q>':>6} | {'探索 点数 回収率':>20} | {'独立 点数 回収率':>20} |"
+          f" {'通し 点数 回収率 95%区間 P':>38} | 100円/点")
+    for t in (1.12, 1.13, 1.14, 1.15, 1.16, 1.17, 1.18, 1.20, 1.22):
+        line = f"    {t:6.3f} |"
+        okboth = True
+        for mk in (X_, B_):
+            m = mk & P & (PQ["g+h"] > t)
+            r = (hit[m] * od[m] * 100).mean() if m.sum() else np.nan
+            okboth &= (m.sum() >= 100) and (r > 100)
+            line += f" {int(m.sum()):5,} {r:6.1f}% |"
+        m = P & (PQ["g+h"] > t) & (X_ | B_)
+        n = int(m.sum()); r = (hit[m] * od[m] * 100).mean()
+        (lo, hi), pw = boot(m); back = float((hit[m] * od[m] * 100).sum())
+        line += (f" {n:5,} {r:6.1f}% [{lo:3.0f},{hi:3.0f}] P={pw:.2f} |"
+                 f" {back-n*100:+8,.0f}円")
+        print(line + ("  ◎両期間100%超" if okboth else ""))
+
+print("\n\n  --- 点数を揃えた比較（p/q 上位N点）---")
+for mk, lab in ((X_, "探索 2026/02-09"), (B_, "独立 2025/05-2026/01")):
+    print(f"\n    {lab}")
+    print(f"      {'点数':>6} |" + "".join(f"{k:>20}|" for k in POP))
+    for N in (600, 800, 1000, 1200, 1600, 2000):
+        line = f"      {N:6,} |"
+        for k, P in POP.items():
+            idx = np.where(mk & P)[0]
+            if len(idx) < N:
+                line += f"{'—':>20}|"; continue
+            s = idx[np.argsort(-PQ["g+h"][idx])[:N]]
+            line += (f" p/q>{PQ['g+h'][s].min():5.3f} "
+                     f"{(hit[s]*od[s]*100).mean():6.1f}%|")
+        print(line)
