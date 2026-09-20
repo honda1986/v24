@@ -63,7 +63,22 @@ def ng(msg, how=""):
     if how:
         for line in how.splitlines():
             say("    ", line)
-    problems.append(msg)
+    problems.append((msg, how))
+
+
+def detail(out, keep=10):
+    """外のコマンドが吐いた中身を、そのまま見せるために整える
+
+    ★1行だけに削らないこと。Windows の DLL まわりの失敗は、
+      最後の行だけ見ても何も分からない。
+    """
+    lines = [l.rstrip() for l in (out or "").strip().splitlines() if l.strip()]
+    text = "\n".join(lines[-keep:])
+    low = (out or "").lower()
+    if "winerror 126" in low or "dll load failed" in low:
+        text += ("\n★Visual C++ の部品が足りません。これを貼って入れてください:"
+                 "\n    winget install --id Microsoft.VCRedist.2015+.x64 -e")
+    return text or "（何も出ませんでした）"
 
 
 # --------------------------------------------------------------------------
@@ -105,8 +120,25 @@ def check_git():
     return True
 
 
+def update_self():
+    """この setup.py 自身が古いことがある。まず新しくしてから進む
+
+    直しを入れるたびに「git pull して」と頼むのは無理があるので、
+    ここで勝手に追いつく。失敗しても止めない（ネットが無いだけかもしれない）。
+    """
+    step(3, "v24 を最新にする")
+    ok, out = run(["git", "pull", "--ff-only", "--quiet"], cwd=REPO, quiet=True)
+    if ok:
+        say("  ○ 最新にしました")
+        return True
+    say("  ! 新しくできませんでした（このまま進みます）")
+    for line in detail(out, 3).splitlines():
+        say("   |", line)
+    return True
+
+
 def check_python():
-    step(2, "Python の版")
+    step(4, "Python の版")
     v = sys.version_info
     say(f"  ○ Python {v.major}.{v.minor}.{v.micro}")
     if v < (3, 9):
@@ -121,7 +153,7 @@ def check_python():
 
 def fix_eol():
     """改行が CRLF に化けていないか。化けていると history.json の統合が壊れる"""
-    step(3, "改行の設定（ここが狂うと記録が壊れる）")
+    step(2, "改行の設定（ここが狂うと記録が壊れる）")
     run(["git", "config", "--global", "core.autocrlf", "false"], quiet=True)
     run(["git", "config", "core.autocrlf", "false"], cwd=REPO, quiet=True)
     say("  ○ core.autocrlf = false にしました")
@@ -149,7 +181,7 @@ def fix_eol():
 
 
 def fetch_v22():
-    step(4, "v22（Kファイルと確定オッズ）")
+    step(5, "v22（Kファイルと確定オッズ）")
     if os.path.isdir(os.path.join(V22, ".git")):
         say("  ○ もうあります:", V22)
         run(["git", "pull", "--quiet"], cwd=V22, quiet=True)
@@ -170,7 +202,7 @@ def fetch_v22():
 
 
 def make_venv():
-    step(5, "Python の入れ物（venv）")
+    step(6, "Python の入れ物（venv）")
     if os.path.exists(PY):
         say("  ○ もうあります:", VENV)
         return True
@@ -184,7 +216,7 @@ def make_venv():
 
 
 def install_libs():
-    step(6, "ライブラリ（numpy / lightgbm / requests / bs4）")
+    step(7, "ライブラリ（numpy / lightgbm / requests / bs4）")
     have = {}
     ok, out = run([PY, "-m", "pip", "list", "--format=freeze"], quiet=True)
     if ok:
@@ -213,25 +245,44 @@ def install_libs():
 
 
 def check_model():
-    """lightgbm の版ずれが怖いので、モデルが本当に読めるかここで確かめる"""
-    step(7, "モデルが読めるか")
-    code = (
-        "import lightgbm as lgb, json;"
-        "b = lgb.Booster(model_file=r'%s');"
-        "print('lightgbm', lgb.__version__, '/ 木の数', b.num_trees())"
-        % os.path.join(REPO, "model", "lgb_mf.txt")
-    )
+    """モデルが本当に読めるかを、どこで転んだか分かる形で確かめる
+
+    ★まとめて1回で試さないこと。前は「モデルを読めませんでした」としか
+      出せず、ライブラリが悪いのかファイルが無いのか分からなかった。
+    """
+    step(8, "モデルが読めるか")
+
+    for mod in ("numpy", "lightgbm"):
+        ok, out = run([PY, "-c", f"import {mod};print({mod}.__version__)"],
+                      cwd=REPO, quiet=True)
+        if not ok:
+            ng(f"{mod} を読み込めません", detail(out))
+            return False
+        say(f"  ○ {mod} {out.strip()}")
+
+    path = os.path.join(REPO, "model", "lgb_mf.txt")
+    if not os.path.exists(path):
+        ng(f"モデルのファイルがありません: {path}",
+           "clone が途中で切れたのかもしれません。\n"
+           f"    cd {REPO}\n"
+           "    git status\n"
+           "を見せてください。")
+        return False
+    say(f"  ○ ファイルはあります（{os.path.getsize(path) // 1024} KB）")
+
+    code = ("import lightgbm as lgb;"
+            "b = lgb.Booster(model_file=r'%s');"
+            "print('trees', b.num_trees())" % path)
     ok, out = run([PY, "-c", code], cwd=REPO, quiet=True)
     if not ok:
-        ng("モデルを読めませんでした",
-           out.strip().splitlines()[-1] if out.strip() else "")
+        ng("モデルを読み込めません", detail(out))
         return False
-    say("  ○", out.strip())
+    say("  ○ 読めました:", out.strip())
     return True
 
 
 def make_logs():
-    step(8, "ログの置き場")
+    step(9, "ログの置き場")
     os.makedirs(LOGS, exist_ok=True)
     say("  ○", LOGS)
     return True
@@ -239,7 +290,7 @@ def make_logs():
 
 def set_topic():
     """ntfy の宛先。GitHub Secrets の NTFY_TOPIC と同じ値"""
-    step(9, "通知の宛先（ntfy）")
+    step(10, "通知の宛先（ntfy）")
     topic = os.environ.get("NTFY_TOPIC", "").strip()
     if topic:
         say("  ○ もう入っています:", topic[:3] + "***")
@@ -262,7 +313,7 @@ def set_topic():
 
 
 def self_tests():
-    step(10, "動くかどうかの確かめ")
+    step(11, "動くかどうかの確かめ")
     for name, script in (("本体", "selftest.py"), ("PC移行ぶん", "pc_selftest.py")):
         say(f"  … {name}（{script}）")
         ok, out = run([PY, script], cwd=REPO, quiet=True)
@@ -279,7 +330,7 @@ def self_tests():
 
 def trial():
     """本番と同じ道すじを、通知もせず push もせずに1回だけ通してみる"""
-    step(11, "試し運転（通知しない・push しない）")
+    step(12, "試し運転（通知しない・push しない）")
     ok, out = run([PY, "runner.py", "yosou", "--dry", "--no-push",
                    "--v22", V22, "--log-dir", LOGS], cwd=REPO)
     if not ok:
@@ -298,9 +349,10 @@ def main():
 
     if not check_git():
         return finish()
+    fix_eol()
+    update_self()
     if not check_python():
         return finish()
-    fix_eol()
     fetch_v22()
     if not make_venv():
         return finish()
@@ -324,8 +376,13 @@ def finish():
         say("  それで毎日ひとりでに動くようになります。")
     else:
         say("  終わりましたが、直すところがあります:")
-        for p in problems:
-            say("   ・", p)
+        # ★ここで中身まで出し直す。画面を遡らなくても、この囲みを貼れば
+        #   何が起きたか分かるようにしておくこと。
+        for msg, how in problems:
+            say("")
+            say("   ・", msg)
+            for line in (how or "").splitlines():
+                say("       ", line)
         say("")
         say("  直したら、この setup.bat をもう一度ダブルクリックしてください。")
     say("=" * 56)
