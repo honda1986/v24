@@ -197,3 +197,31 @@ for t in (1.097, 1.15):
         n = int(m.sum()); back = float((hit[m] * od[m] * 100).sum())
         print(f"  p/q>{t} {lab}: 投資 {n*100:8,.0f}円 → 回収 {back:9,.0f}円 "
               f"（{back-n*100:+9,.0f}円）")
+
+print("\n\n############ 10. 波・風の足切りを省いた場合のしきい値 ############")
+print("   淡水除外だけ残し、波・風を課さない母集団で p/q を掃引する。")
+print("   足切りで捨てていたぶんは、しきい値を上げて埋める必要がある。")
+noww = (~tansui) & (q >= 0.12) & (q < 0.25)
+cur = OK & (q >= 0.12) & (q < 0.25)
+print(f"   {'p/q>':>6} | {'探索 点数 回収率':>20} | {'独立 点数 回収率':>20} |"
+      f" {'通し 点数 回収率 95%区間 P(>100%)':>40} | 100円/点")
+for t in (1.10, 1.12, 1.13, 1.14, 1.15, 1.16, 1.17, 1.18, 1.20):
+    line = f"   {t:6.3f} |"
+    for mk in (X_, B_):
+        m = mk & noww & (PQ["g+h"] > t)
+        line += f" {int(m.sum()):5,} {(hit[m]*od[m]*100).mean():6.1f}% |"
+    m = noww & (PQ["g+h"] > t) & (X_ | B_)
+    n = int(m.sum()); r = (hit[m] * od[m] * 100).mean()
+    (lo, hi), pw = boot(m); back = float((hit[m] * od[m] * 100).sum())
+    line += (f" {n:5,} {r:6.1f}% [{lo:3.0f},{hi:3.0f}] P={pw:.2f} |"
+             f" {back-n*100:+8,.0f}円")
+    print(line)
+print("\n   現行(足切りあり・p/q>1.097)と同じ点数に揃えた場合")
+for mk, lab in ((X_, "探索"), (B_, "独立")):
+    N = int((cur & (PQ["g+h"] > 1.097) & mk).sum())
+    idx = np.where(noww & mk)[0]
+    s = idx[np.argsort(-PQ["g+h"][idx])[:N]]
+    m0 = cur & (PQ["g+h"] > 1.097) & mk
+    print(f"     {lab}: 現行{N:,}点 → 波風なしなら p/q>{PQ['g+h'][s].min():.3f} "
+          f"で同じ{N:,}点・回収率 {(hit[s]*od[s]*100).mean():.1f}%"
+          f"（現行 {(hit[m0]*od[m0]*100).mean():.1f}%）")
