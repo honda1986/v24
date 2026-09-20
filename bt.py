@@ -186,7 +186,7 @@ def ana_report(A, thr):
     _ana_months(lo)
     _ana_line(A, "版45  足切りなし          ")
     print("  【最低オッズフィルタの確認（§6-4）】")
-    _ana_line(lo, f"  最低オッズ <{thr:.0f}倍")
+    print(f"  （<{thr:.0f}倍 の側は上の「版47」と同じ集合なので再掲しない）")
     _ana_line(hi, f"  最低オッズ>={thr:.0f}倍")
     if len(lo) and len(hi):
         d = (lo[:, 3] * lo[:, 2] * 100.0).mean() - (hi[:, 3] * hi[:, 2] * 100.0).mean()

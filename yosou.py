@@ -802,7 +802,10 @@ def main():
     if not args.dry and skips:
         site_log(date, None, None, None, None, None, None, None, None,
                  None, None, skips)
-    print(f"通知 {bought}件" + (f"  穴側(試験) {bought_ana}件" if bought_ana else ""))
+    print(f"通知 {bought}件"
+          + (f"  穴側(試験) {bought_ana}件"
+             + ("（シャドー。通知していません）" if ana_shadow else "")
+             if bought_ana else ""))
 
 
 if __name__ == "__main__":

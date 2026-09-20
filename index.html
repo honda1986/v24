@@ -237,9 +237,11 @@ a{color:var(--blue)}
 // 見送りの理由は yosou.py が付ける。増えても落とさないよう、
 // 決めた順を先に出し、知らないキーはそのあとに続ける。
 const SKIP_ORDER = ["波・風","帯の外／p/q不足","補正モデルが読めない","データ欠"];
-// ★穴側のしきい値を 1.097 → 1.15 に変えた日。これより前の記録は別ルールの
+// ★穴側のしきい値を 1.097 → 1.15 に変えた日。これ「以前」の記録は別ルールの
 //   成績なので、混ぜて回収率を出さない（ana_howto.md §8 の事前登録）。
-const ANA_FROM = "20260920";
+//   ★切り替え日そのものも含めない。その日の早い時間帯は旧ルール（1.097）で
+//     動いていて、通知して買った記録がすでに入っているため。
+const ANA_AFTER = "20260920";
 const yen = n => (n<0?"−":"") + "¥" + Math.abs(Math.round(n)).toLocaleString("ja-JP");
 const pct = n => (n*100).toFixed(1) + "%";
 const fmtDate = d => `${d.slice(0,4)}/${d.slice(4,6)}/${d.slice(6,8)}`;
@@ -308,7 +310,7 @@ function render(data){
   }
 
   // --- 穴側(試験)。★帯とは別勘定。上の成績には1円も混ぜない ---
-  const anaAll = days.filter(d => (d.date || "") >= ANA_FROM)
+  const anaAll = days.filter(d => (d.date || "") > ANA_AFTER)
                      .flatMap(d => d.ana || []);
   if(anaAll.length){
     document.getElementById("anacard").style.display = "";
@@ -341,7 +343,7 @@ function render(data){
       "1着が1号艇でない組を、オッズ8〜15倍・p/q 1.15超で選ぶ試験ルール。"
       + "★シャドー（記録だけで、買っても通知してもいません）。"
       + "そのレースに8倍を切る組が1つも無い（本命が居ない）レースは見送ります。"
-      + `${ANA_FROM} 以降の記録だけを数えています（それ以前は p/q 1.097 の別ルール）。`
+      + `${ANA_AFTER} より後の記録だけを数えています（それ以前は p/q 1.097 の別ルール）。`
       + "上の成績とは別勘定です。"
       + `確定 ${ad.length} レース分。`
       + (ahit < 50 ? "　※的中50本を超えるまでは判定しません（ana_howto.md §8）。" : "");

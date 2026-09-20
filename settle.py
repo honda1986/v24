@@ -40,6 +40,16 @@ PQ_MIN = 1.05          # select_rule と同じ。補正なしで買ったとき�
 #   ★2026-09-20 より前に買った記録は 1.097/1.078 で選ばれているので、
 #     新しい基準で見ると厳しめに出る（見落としではなく安全側のずれ）。
 PQ_BAND = {"g+h": 1.15, "g": 1.11, "base": PQ_MIN}
+# ★しきい値を上げた日。これより前の記録は 1.097/1.078 で選ばれているので、
+#   その日以前と以後を同じ基準で数えてはいけない。
+SWITCH = "20260920"
+PQ_BAND_OLD = {"g+h": 1.097, "g": 1.078, "base": PQ_MIN}
+
+
+def band_th(date, pick):
+    """その買い目が実際に選ばれたときのしきい値"""
+    tbl = PQ_BAND if (date or "") > SWITCH else PQ_BAND_OLD
+    return tbl.get(pick.get("rule"), PQ_MIN)
 PQ_ANA = 1.15          # 穴側(試験)のしきい値。select_rule.ANA_PQ_MIN と同じ
                        # ★2026-09-20 に 1.097 から変更。それ以前の記録を
                        #   混ぜて数えると基準が揃わないので注意
@@ -159,7 +169,7 @@ def main():
             for p in nod:
                 od = rm.get((p["jcd"], p["rno"]))
                 if od:
-                    drift(p, od, PQ_BAND.get(p.get("rule"), PQ_MIN))
+                    drift(p, od, band_th(day["date"], p))
         # ★穴側(試験)も同じ突き合わせをする。ただし別勘定（メモ §41）。
         apend = [p for p in day.get("ana") or [] if p.get("hit") is None]
         if rm:
@@ -209,7 +219,9 @@ def main():
         json.dump(h, f, ensure_ascii=False)
 
     # 通しの成績を出す
-    picks = [p for d in (h.get("days") or []) for p in (d.get("picks") or [])]
+    dated = [(d["date"], p) for d in (h.get("days") or [])
+             for p in (d.get("picks") or [])]
+    picks = [p for _, p in dated]
     done = [p for p in picks if p.get("hit") is not None]
     cost = sum(p.get("cost") or 0 for p in done)
     ret = sum(p.get("ret") or 0 for p in done)
@@ -224,18 +236,29 @@ def main():
         print("まだ確定したレースがありません")
 
     # --- 穴側(試験)の成績。★帯とは混ぜない ---
-    ana = [p for d in (h.get("days") or []) for p in (d.get("ana") or [])]
+    # ★2026-09-20 までの記録は p/q>1.097 の別ルールで、しかも通知して買った
+    #   ぶん。いまのシャドー（1.15・記録のみ）と混ぜて回収率を出すと、
+    #   ana_howto.md §8 の事前登録が意味をなさなくなる。日付で切る。
+    ana = [p for d in (h.get("days") or []) if d["date"] > SWITCH
+           for p in (d.get("ana") or [])]
+    ana_old = sum(len(d.get("ana") or []) for d in (h.get("days") or [])
+                  if d["date"] <= SWITCH)
     adone = [p for p in ana if p.get("hit") is not None]
-    if ana:
+    if ana or ana_old:
         acost = sum(p.get("cost") or 0 for p in adone)
         aret = sum(p.get("ret") or 0 for p in adone)
-        print(f"\n穴側(試験) {len(ana)}レース "
+        print(f"\n穴側(試験・シャドー / p/q>{PQ_BAND['g+h']} / {SWITCH} より後) "
+              f"{len(ana)}レース "
               f"{sum(len(p.get('buys') or []) for p in ana)}点 / 確定 {len(adone)}レース")
+        if ana_old:
+            print(f"  （{SWITCH} 以前の {ana_old}レースは p/q>1.097 の別ルール。"
+                  "混ぜないので数えていません）")
         if acost:
             print(f"  的中 {sum(1 for p in adone if p['hit'])}  "
                   f"回収率 {aret/acost*100:.1f}%  収支 {aret-acost:+,.0f}円"
-                  "  ★これは実弾ではない。買うかはレースごとに自分で決めたもの")
-            print("  検証値は153.6%。的中70本を超えるまでは運の範囲")
+                  "  ★通知も投票もしていない記録だけの数字")
+            print("  ★的中50本を超えるまでは判定しない（ana_howto.md §8 の事前登録）。"
+                  "1.097 時代の 153.6% は別ルールの数字なので比べないこと")
 
     # --- オッズの目減り ---
     mv = [b["move"] for p in picks for b in (p.get("buys") or [])
@@ -246,16 +269,25 @@ def main():
         avg = sum(mv) / n
         med = mv[n // 2]
         dn = sum(1 for x in mv if x < 1.0) / n * 100
-        kept = sum(p.get("kept") or 0 for p in picks if p.get("kept") is not None)
-        tot = sum(len(p.get("buys") or []) for p in picks
-                  if p.get("kept") is not None)
+        # ★p["kept"] は drift を回した時点のしきい値で数えた値がそのまま
+        #   残っている（確定オッズが入った回しか drift は走らない）。
+        #   古い基準の数を新しい見出しで出すと二重にずれるので、
+        #   保存してある fpq から毎回数え直す。
+        kept = tot = 0
+        ths = set()
+        for dt, p in dated:
+            bs = [b for b in (p.get("buys") or []) if b.get("fpq") is not None]
+            if not bs:
+                continue
+            th = band_th(dt, p)
+            ths.add(th)
+            tot += len(bs)
+            kept += sum(1 for b in bs if b["fpq"] > th)
         print(f"\nオッズの目減り（買った {n}組）")
         print(f"  通知時 → 確定   平均 {avg:.3f}倍  中央 {med:.3f}倍  "
               f"下がった {dn:.0f}%")
         if tot:
-            ths = sorted({PQ_BAND.get(p.get("rule"), PQ_MIN) for p in picks
-                          if p.get("kept") is not None})
-            lab = "/".join(f"{t:g}" for t in ths)
+            lab = "/".join(f"{t:g}" for t in sorted(ths))
             print(f"  確定オッズでも p/q>{lab} を満たしたまま  "
                   f"{kept}/{tot}（{kept/tot*100:.0f}%）")
         print(f"  ★素朴な見積りでは回収率 {(avg-1)*100:+.1f}pt。"
