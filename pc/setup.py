@@ -58,6 +58,20 @@ def run(args, cwd=None, quiet=False):
     return p.returncode == 0, out
 
 
+def run_live(args, cwd=None):
+    """画面を取り上げずに動かす
+
+    ★capture_output を使わないこと。GitHub のログインを聞かれたとき、
+      その字が見えないまま固まる。実機でタスクが固まったのと同じ理屈。
+    """
+    try:
+        return subprocess.run(args, cwd=cwd,
+                              env=dict(os.environ, PYTHONUTF8="1")).returncode
+    except OSError as e:
+        say("   |", f"{args[0]} を動かせません: {e}")
+        return 1
+
+
 def ng(msg, how=""):
     say("  ×", msg)
     if how:
@@ -328,14 +342,43 @@ def self_tests():
     return True
 
 
+def check_push():
+    """GitHub のログインを、画面のある今のうちに済ませる
+
+    ★これを飛ばすと、毎日の自動実行が1回目の push で固まる。
+      タスクスケジューラには画面が無いので、合言葉を聞く窓を出せない。
+      （2026-09-20 に実機で起きた。ログが push の手前で止まり、
+        次の周からはずっと「まだ動いています」で飛ばされた）
+    """
+    step(12, "GitHub に書き込めるか（ログイン）")
+    say("  ログイン（ブラウザが開くか、合言葉の入力）を求められたら答えてください。")
+    say("  一度答えれば Windows が覚えるので、次からは聞かれません。")
+    say("")
+    code = run_live(["git", "push", "--dry-run", "-q", "origin",
+                     "HEAD:refs/heads/pc-setup-probe"], cwd=REPO)
+    say("")
+    if code != 0:
+        ng("GitHub に書き込めません",
+           "v24 に書き込める PAT が要ります。\n"
+           "  GitHub → Settings → Developer settings →\n"
+           "  Personal access tokens → Fine-grained tokens\n"
+           "  対象は v24 だけ / Contents を Read and write / 期限1年\n"
+           "★トークンはどのファイルにも書かないこと。Windows が覚えます。")
+        return False
+    say("  ○ 書き込めます（何も変えていません。ためしただけです）")
+    return True
+
+
 def trial():
-    """本番と同じ道すじを、通知もせず push もせずに1回だけ通してみる"""
-    step(12, "試し運転（通知しない・push しない）")
-    ok, out = run([PY, "runner.py", "yosou", "--dry", "--no-push",
-                   "--v22", V22, "--log-dir", LOGS], cwd=REPO)
-    if not ok:
-        ng("試し運転に失敗しました",
-           f"{LOGS} のログを見てください。")
+    """本番とまったく同じ道すじを1回通す（通知だけしない）"""
+    step(13, "試し運転（通知しないだけで、あとは本番と同じ）")
+    code = run_live([PY, "runner.py", "yosou", "--dry",
+                     "--v22", V22, "--log-dir", LOGS], cwd=REPO)
+    if code == 2:
+        say("  ! もう動いていたので、この回は何もしませんでした（異常ではありません）")
+        return True
+    if code != 0:
+        ng("試し運転に失敗しました", f"{LOGS} のログを見てください。")
         return False
     say("  ○ 通りました")
     return True
@@ -361,7 +404,7 @@ def main():
     check_model()
     make_logs()
     set_topic()
-    if self_tests():
+    if self_tests() and check_push():
         trial()
     return finish()
 
