@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -275,6 +276,73 @@ class TestLock(Base):
         os.utime(self.path(), (0, 0))            # 大昔に作られたことにする
         with runner.Lock(self.path(), stale_minutes=60, log=self.quiet) as got:
             self.assertTrue(got)
+
+
+class TestGitNeverHangs(Base):
+    """画面の無いところで git に人を待たせない（実機で1回目の push が固まった）"""
+
+    def test_人に聞かせない設定を渡している(self):
+        seen = {}
+        real = subprocess.run
+
+        def spy(args, **kw):
+            seen.update(kw.get("env") or {})
+            return real(args, **kw)
+
+        subprocess.run = spy
+        try:
+            runner.git(self.pc, "status", "--porcelain")
+        finally:
+            subprocess.run = real
+        self.assertEqual(seen.get("GIT_TERMINAL_PROMPT"), "0")
+        self.assertEqual(seen.get("GCM_INTERACTIVE"), "never")
+        self.assertEqual(seen.get("GIT_ASKPASS"), "")
+
+    def test_時間切れでも戻ってくる(self):
+        real = subprocess.run
+
+        def slow(args, **kw):
+            raise subprocess.TimeoutExpired(args, kw.get("timeout", 1))
+
+        subprocess.run = slow
+        try:
+            ok, out = runner.git(self.pc, "push", "origin", "HEAD:main")
+        finally:
+            subprocess.run = real
+        self.assertFalse(ok)
+        self.assertIn("諦めました", out)
+
+    def test_時間切れはcheckで例外になる(self):
+        real = subprocess.run
+
+        def slow(args, **kw):
+            raise subprocess.TimeoutExpired(args, 1)
+
+        subprocess.run = slow
+        try:
+            with self.assertRaises(RuntimeError):
+                runner.git(self.pc, "fetch", check=True)
+        finally:
+            subprocess.run = real
+
+
+class TestStaleLockWindow(Base):
+    """強制終了でロックが残っても、長く居座らせない
+
+    タスク側の打ち切りは yosou が10分。20分前のロックは死んでいるとみなす。
+    """
+
+    def test_20分前のロックは捨てる(self):
+        logs = os.path.join(self.dir, "logs")
+        os.makedirs(logs, exist_ok=True)
+        lock = os.path.join(logs, "yosou.lock")
+        with open(lock, "w") as f:
+            f.write("999999 0\n")
+        old = time.time() - 20 * 60
+        os.utime(lock, (old, old))
+        code = runner.main(["yosou", "--repo", self.pc, "--log-dir", logs,
+                            "--no-push", "--python", sys.executable])
+        self.assertNotEqual(code, 2)
 
 
 class TestUnion(unittest.TestCase):

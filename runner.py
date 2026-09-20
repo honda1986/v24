@@ -54,10 +54,31 @@ def now_jst():
 # --------------------------------------------------------------------------
 # git
 # --------------------------------------------------------------------------
-def git(repo, *args, check=False):
-    """git を1回叩く。(ok, 出力) を返す"""
-    p = subprocess.run(["git", *args], cwd=repo, capture_output=True,
-                       text=True, encoding="utf-8", errors="replace")
+# ★git に「人に聞く」を絶対にさせない（2026-09-20）
+#   タスクスケジューラから動くときは画面が無い。GitHub の認証が要る状態で
+#   push すると、パスワードを聞く窓を出せずに固まる。実機では1回目の push で
+#   止まり、次の周が「まだ動いています」で全部飛ばされた。
+#   聞かずに失敗させれば「push できず(次周に持ち越し)」で済む。
+GIT_ENV = {
+    "GIT_TERMINAL_PROMPT": "0",     # 端末で聞かない
+    "GCM_INTERACTIVE": "never",     # Git Credential Manager の窓を出さない
+    "GIT_ASKPASS": "",              # 外の入力窓も使わせない
+    "SSH_ASKPASS": "",
+}
+GIT_TIMEOUT = 180                   # 念のための上限。ここまでで必ず戻る
+
+
+def git(repo, *args, check=False, timeout=GIT_TIMEOUT):
+    """git を1回叩く。(ok, 出力) を返す。止まらない・聞かない"""
+    try:
+        p = subprocess.run(["git", *args], cwd=repo, capture_output=True,
+                           text=True, encoding="utf-8", errors="replace",
+                           env=dict(os.environ, **GIT_ENV), timeout=timeout)
+    except subprocess.TimeoutExpired:
+        out = f"git {' '.join(args)}: {timeout}秒で戻ってこないので諦めました"
+        if check:
+            raise RuntimeError(out)
+        return False, out
     if check and p.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)}: {p.stderr.strip()}")
     return p.returncode == 0, (p.stdout or "") + (p.stderr or "")
@@ -227,6 +248,11 @@ def save(repo, message, log=print, push=True):
     ok, out = git(repo, "push", "-q", "origin", f"HEAD:{br}")
     if not ok:
         log(f"  push できず(次周に持ち越し): {out.strip()[:200]}")
+        low = out.lower()
+        if ("authentication" in low or "could not read" in low
+                or "terminal prompts disabled" in low or "403" in low):
+            log("  ★GitHub のログインがまだです。画面のある窓で1回 push して"
+                "ください:  cd C:\\boat\\v24 && git push origin HEAD:main")
         return "push できず"
     log("  push しました")
     return "push"
@@ -388,8 +414,11 @@ def main(argv=None):
     log = Log(os.path.join(log_dir, f"{args.task}_{now_jst():%Y%m%d}.log"))
     timeout = args.timeout or TASKS[args.task]
 
+    # ★古すぎる値にしないこと。強制終了されるとロックのファイルが残るので、
+    #   長すぎるとその間ずっと「まだ動いています」で何もしなくなる。
+    #   タスク側の打ち切り（yosou は10分）より少しだけ長ければよい。
     with Lock(os.path.join(log_dir, f"{args.task}.lock"),
-              stale_minutes=max(60, timeout // 60 + 10), log=log) as got:
+              stale_minutes=max(15, timeout // 60 + 5), log=log) as got:
         if not got:
             return 2
         log(f"=== {args.task} 開始 ===")
