@@ -1,0 +1,9 @@
+# ログイン状態が入っている。絶対に共有しない
+chrome_profile/
+# 投票の記録・ログ・確認画面のスクショは手元だけのもの
+bet_done.json
+logs/
+shots/
+STOP
+__pycache__/
+*.pyc

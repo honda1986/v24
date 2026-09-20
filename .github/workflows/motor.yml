@@ -3,8 +3,11 @@ name: motor
 # v23 は15分ループのたびに v22 の kfile を sparse checkout していたが、
 # 10分ループでそれをやると重すぎるので分離した。
 on:
-  schedule:
-    - cron: "0 21 * * *"      # UTC 21:00 = JST 6:00
+  # ★定期実行は PC のタスクスケジューラに移した（2026-09-20）。
+  #   ここに schedule: を戻さないこと。PC と GitHub の両方が定期で動くと、
+  #   同じレースを二重に通知し、自動投票が二重に買いに行く。
+  #   PC 側は毎日 6:00 に runner.py motor が回す。
+  #   何日か落ちていたら、手動起動で1回埋めればよい（--days 400 で遡る）。
   workflow_dispatch:
 
 permissions:

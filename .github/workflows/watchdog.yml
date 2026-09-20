@@ -1,0 +1,27 @@
+name: watchdog
+# PC が日中に止まったら、1時間以内に知らせる。
+# ★読むだけ。commit も push もしない。
+#   PC が3分おきに push していれば history.json の last_run は常に数分前になる。
+#   それが30分以上あいたら、PC が止まっているか push できていない。
+#
+#   夜の daily.yml（23:50）が最後の砦なので、こちらは日中だけでよい。
+#   GitHub の定期実行は遅れるが、見張り役としては1〜2時間の遅れは許せる。
+on:
+  schedule:
+    - cron: "0 0-14 * * *"      # UTC 0:00-14:00 = JST 9:00-23:00 の毎時
+  workflow_dispatch:
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests
+      - name: PC が動いているかを見る
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python watchdog.py
