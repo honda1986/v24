@@ -186,10 +186,15 @@ def g6_ntfy(topic):
 
 def g7_rule():
     import select_rule as SR
-    cases = [((24, 1, 2), True), ((2, 1, 2), False), ((24, 6, 2), False),
-             ((24, 1, 5), False), ((24, None, 2), False)]
-    bad = [c for c, want in cases if SR.race_ok(*c) is not want]
-    return gate("気象の足切り", not bad, f"5例すべて期待どおり" if not bad else f"{bad}")
+    # 帯は淡水と「気象が取れない」だけで切る。波・風の大きさでは切らない
+    band = [((24, 1, 2), True), ((2, 1, 2), False), ((24, 6, 2), True),
+            ((24, 1, 5), True), ((24, None, 2), False), ((24, -1, -99), False)]
+    # 穴側(試験)は従来の足切りのまま（ana_howto.md §8 の事前登録）
+    ana = [((24, 1, 2), True), ((24, 6, 2), False), ((24, 1, 5), False)]
+    bad = [("band",) + (c,) for c, want in band if SR.band_ok(*c) is not want]
+    bad += [("ana",) + (c,) for c, want in ana if SR.ana_ok(*c) is not want]
+    return gate("気象の足切り", not bad,
+                "帯6例・穴側3例すべて期待どおり" if not bad else f"{bad}")
 
 
 def main():

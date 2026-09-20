@@ -75,13 +75,25 @@ def main():
               + ("  " + " ".join(F.COMBOS[i] for i in buy[:4]) if buy else ""))
 
     print("\n4) レースの足切り")
+    # ★帯は淡水を外すだけ。波・風の大きさでは切らない（2026-09-20）。
+    #   穴側(試験)は従来の足切りのままなので、そちらは ana_ok で確かめる。
     cases = [(24, 1, 2, True, "大村・波1cm・風2m"),
              (2, 1, 2, False, "戸田(淡水)"),
-             (24, 6, 2, False, "波6cm"),
-             (24, 1, 5, False, "風5m"),
-             (24, None, 2, False, "気象が取れない")]
+             (24, 6, 2, True, "波6cm（帯は買う）"),
+             (24, 1, 5, True, "風5m（帯は買う）"),
+             (24, None, 2, False, "気象が取れない"),
+             (24, -1, -99, False, "気象が負の値")]
     for jcd, wv, wd, want, nm in cases:
-        got = SR.race_ok(jcd, wv, wd)
+        got = SR.band_ok(jcd, wv, wd)
+        ok &= got == want
+        print(f"   {nm:<22} {'買う' if got else '見送り'}"
+              + ("" if got == want else "  ★期待と違う"))
+
+    print("   --- 穴側(試験)は従来の足切りのまま ---")
+    for jcd, wv, wd, want, nm in [(24, 1, 2, True, "波1cm・風2m"),
+                                  (24, 6, 2, False, "波6cm"),
+                                  (24, 1, 5, False, "風5m")]:
+        got = SR.ana_ok(jcd, wv, wd)
         ok &= got == want
         print(f"   {nm:<22} {'買う' if got else '見送り'}"
               + ("" if got == want else "  ★期待と違う"))

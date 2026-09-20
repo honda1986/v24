@@ -20,7 +20,21 @@ from datetime import datetime, timedelta, timezone
 
 JST = timezone(timedelta(hours=9))
 SITE = "history.json"
-EXPECT_RACES = 6.6      # 検証値。1日あたり買い目が出るレース数
+# ★2026-09-20 に帯を「p/q>1.15 ＋ 波・風の足切りを廃止」に変えた
+#   （band_howto.md §13〜§14）。1.097＋足切りありのときの検証値は 1日6.6レース。
+#   新しい設定では
+#     バックテスト（確定オッズ・498日）          1日 4.9レース（買えた日 97%）
+#     ↑を本番の目減り率で割り引いた見込み        1日 2.0レース
+#   本番は締切前オッズで判定するぶん p/q が下がる（本番20日の再生では
+#   バックテストの約0.4倍だった）。daily.py が見比べる相手は後者を使う。
+#   実績が貯まったら測り直すこと。
+EXPECT_RACES = 2.0      # 1日あたり買い目が出るレース数（本番相当の見込み）
+# ★買い目ゼロの日は普通にある。足切りを外して 97% の日に買い目が出る見込みだが、
+#   本番の目減りを考えるとゼロの日は 1〜2割は出る。3日連続で警報を出すと
+#   鳴りやすいので、実際に「壊れている」と言える長さまで伸ばす。
+#   ほかの警報（yosou が動いていない／対象レースがゼロ／データ欠）が
+#   本来の故障検知を担う。
+ZERO_DAYS = 10
 
 
 def load(path, default=None):
@@ -67,9 +81,9 @@ def main():
         lack = skipped.get("データ欠", 0)
         by = dict(skipped)
 
-    # 直近3日、買い目が出たか
+    # 直近 ZERO_DAYS 日、買い目が出たか（先頭3日はメッセージにも出す）
     recent = []
-    for i in range(3):
+    for i in range(ZERO_DAYS):
         d = (datetime.strptime(date, "%Y%m%d") - timedelta(days=i)).strftime("%Y%m%d")
         recent.append(len((days.get(d) or {}).get("picks") or []))
 
@@ -99,8 +113,12 @@ def main():
     elif lack and lack / max(looked, 1) > 0.3:
         alarm.append(f"データが取れないレースが{lack}/{looked}"
                      f"（{lack/looked*100:.0f}%）。取得元が不調")
-    if len(picks) == 0 and sum(recent) == 0 and looked and not early:
-        alarm.append("3日続けて買い目ゼロ。検証値では0.0016%しか起きない")
+    # ★「静かなだけ」と「壊れている」を分ける。1.15 では買い目ゼロの日が
+    #   4割ほどあるので、連続の長さで見る（ZERO_DAYS の説明を参照）。
+    if (len(picks) == 0 and sum(recent) == 0 and looked and not early
+            and len(days) >= ZERO_DAYS):
+        alarm.append(f"{ZERO_DAYS}日続けて買い目ゼロ。"
+                     "ゼロの日自体は珍しくないが、この長さは想定外")
 
     title = (f"v24 {date[4:6]}/{date[6:8]} 今日の集計"
              if not alarm else f"★v24 {date[4:6]}/{date[6:8]} 異常")

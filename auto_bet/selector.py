@@ -75,7 +75,12 @@ def sources(day, cfg):
     if cfg.buy_obi and isinstance(day.get("picks"), list):
         out.append((KIND_OBI, day["picks"]))
     if cfg.buy_ana and isinstance(day.get("ana"), list):   # ana が無い日もある
-        out.append((KIND_ANA, day["ana"]))
+        # ★"shadow": true の回は yosou.py が「通知せず記録だけ」で残したもの。
+        #   買ってはいけない。ntfy を止めただけでは、ここが読んで実弾で買う。
+        live = [r for r in day["ana"]
+                if isinstance(r, dict) and not r.get("shadow")]
+        if live:
+            out.append((KIND_ANA, live))
     return out
 
 

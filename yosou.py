@@ -250,7 +250,8 @@ def site_log(date, place, jcd, rno, close, buys, cp, q, odds, wave, wind, skippe
     _save(SITE, h)
 
 
-def site_ana(date, place, jcd, rno, close, buy, cp, q, odds, wave, wind, top=None):
+def site_ana(date, place, jcd, rno, close, buy, cp, q, odds, wave, wind,
+             top=None, shadow=False):
     """穴側(試験)を day["ana"] に残す。★picks には入れない。
 
     帯の成績と混ざると、どちらが効いているのか分からなくなる。
@@ -277,6 +278,10 @@ def site_ana(date, place, jcd, rno, close, buy, cp, q, odds, wave, wind, top=Non
         # ★そのレースの最低オッズ。§45 の足切り（8倍未満のレースだけ買う）が
         #   効いているかを、あとから記録だけで検算できるようにする
         "omin": round(float(min(odds)), 1),
+        # ★シャドー（通知せず記録だけ）の印。auto_bet はこの印が付いた回を
+        #   買わない。印を付けずに day["ana"] に置くと、ntfy を止めただけでは
+        #   自動投票が実弾で買ってしまう（buy_ana を有効にしている場合）。
+        "shadow": bool(shadow),
         "top": top,
         "combo": None, "pay": None, "hit": None, "ret": None,
     })
@@ -515,7 +520,12 @@ def main():
     #   期待値では上（+2.3pt）だが確かではない（75%）。紙で回している間は
     #   期待値に従う。使わないほうも毎回記録するので、比較は続けられる。
     ap.add_argument("--no-ana", dest="ana", action="store_false", default=True,
-                    help="穴側(試験)を出さない")
+                    help="穴側(試験)を計算しない")
+    # ★穴側は既定でシャドー（記録だけ残して通知しない）。独立期間で87.5%、
+    #   事前登録の判定は「再現せず」だった（ana_howto.md）。しきい値を 1.15 に
+    #   上げても独立期間はトントンまでしか戻らないので、実弾の通知は出さない。
+    ap.add_argument("--ana-notify", dest="ana_notify", action="store_true",
+                    default=False, help="穴側(試験)を通知する（既定は記録のみ）")
     ap.add_argument("--no-g", dest="use_g", action="store_false", default=True,
                     help="2着の補正を使わない（従来の作り方に戻す）")
     args = ap.parse_args()
@@ -528,7 +538,11 @@ def main():
     now = datetime.now(OF.JST)
     date = args.date or now.strftime("%Y%m%d")
     topic = os.environ.get("NTFY_TOPIC", "")
-    prune(date)
+    # ★prune は当日の通常実行のときだけ。--dry や --date で過去日を指定した回に
+    #   走らせると、その日以外＝**今日の** notified_*.json まで消えてしまい、
+    #   次の本番実行で通知済みのレースを二重に通知する。
+    if not args.dry and date == now.strftime("%Y%m%d"):
+        prune(date)
     model = load_model()
     # ★2着の補正（メモ §30）。model/lgb_2nd.txt が無ければ None で、
     #   そのとき g=1 となり従来とまったく同じ動きになる。
@@ -538,9 +552,20 @@ def main():
         m2 = m3 = None
     print("2着の補正 " + ("使う" if m2 is not None else "なし") +
           " / 3着の補正 " + ("使う" if m3 is not None else "なし"))
+    # ★--no-g は「従来の作り方(補正なし)に戻す」ための明示の指定。そのときだけ
+    #   補正なしで買ってよい。指定していないのに補正が無いのは配置の事故なので、
+    #   帯は買わずに知らせる（黙って負けるしきい値で買うほうが危ない）。
+    base_ok = not args.use_g
+    if args.use_g and m2 is None:
+        print("★2着の補正(g)が読めません。帯は買いません。"
+              "h だけ／補正なしでは、両期間そろって100%を超えるしきい値が"
+              "ありません（band_howto.md §12）")
     # ★穴側(試験)は g と h の両方が要る。片方でも無ければ回らない（メモ §41）
     ana_on = bool(args.ana and m2 is not None and m3 is not None)
-    print("穴側(試験) " + ("使う" if ana_on else "なし"))
+    ana_shadow = ana_on and not args.ana_notify
+    print("穴側(試験) " + ("なし" if not ana_on else
+                        "記録のみ(シャドー)" if ana_shadow else "通知あり")
+          + f" / p/q>{SR.ANA_PQ_MIN}")
     motor = load_motor()
 
     st_path = f"{STATE_DIR}/notified_{date}.json"
@@ -597,12 +622,15 @@ def main():
         # 3. 直前情報 → 波・風で足切り
         info = BI.fetch(date, jcd, rno)
         wave, wind = BI.wave_wind(info)
-        if not SR.race_ok(jcd, wave, wind):
+        # ★帯は淡水を外すだけ（2026-09-20、band_howto.md §14）。
+        #   波・風の大きさでは切らない。値が取れないレースは、波高・風速が
+        #   モデルの特徴量でもあるので従来どおり見送る。
+        if not SR.band_ok(jcd, wave, wind):
             print(f"  {tag} 見送り  波{wave} 風{wind}")
-            skip("波・風" if wave is not None else "データ欠")
+            skip("淡水" if int(jcd) in SR.TANSUI else "データ欠")
             if not args.dry:
                 site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net,
-                          "波・風" if wave is not None else "気象が取れない",
+                          "淡水" if int(jcd) in SR.TANSUI else "気象が取れない",
                           wave, wind)
             continue
         pg = card(date, jcd)
@@ -669,21 +697,29 @@ def main():
         #   どちらも毎回計算して記録する。あとから比べられるようにするため。
         buy_base = SR.pick(q, cp)
         buy_alt = None
-        if m2 is not None or m3 is not None:
+        # ★どの補正が揃っているかでしきい値が変わる（band_howto.md §12）。
+        #   g+h    → PQ_MIN_GH (1.15)
+        #   g だけ → PQ_MIN_G  (1.11)
+        #   h だけ → **買わない**。両期間そろって100%を超えるしきい値が無い。
+        #   ★前は「h があれば PQ_MIN_GH」と書いていたため、g が欠けて h だけ
+        #     残った場合に、検証していない組み合わせを g+h 用のしきい値で
+        #     買ってしまう形になっていた（2026-09-20 修正）。
+        th = (SR.PQ_MIN_GH if (m2 is not None and m3 is not None)
+              else SR.PQ_MIN_G if m2 is not None else None)
+        if th is not None:
             mt = dict(meta, wave=wave, wind=wind)
             qa = np.asarray(q, float)
-            cpg = cp.copy()
-            if m2 is not None:
-                g = SEC.gmatrix(m2, lanes, mt, qa, F.FIRST, SEC_IDX)
-                cpg = cpg * g[F.FIRST, SEC_IDX]
+            g = SEC.gmatrix(m2, lanes, mt, qa, F.FIRST, SEC_IDX)
+            cpg = cp * g[F.FIRST, SEC_IDX]
             if m3 is not None:
                 cpg = cpg * THI.hvector(m3, lanes, mt, qa,
                                         F.FIRST, SEC_IDX, THI_IDX)
             cpg = cpg / cpg.sum()
-            th = SR.PQ_MIN_GH if m3 is not None else SR.PQ_MIN_G
             cp, buy, buy_alt = cpg, SR.pick(q, cpg, th), buy_base
+        elif base_ok:
+            buy = buy_base           # --no-g で明示的に従来の作り方にしたとき
         else:
-            buy = buy_base
+            buy = []                 # 補正が壊れている。黙って劣化させない
         # ★穴側(試験)。メモ §41。帯とは別勘定で持つ。
         #   g と h の両方が入っているときだけ。検証がその形でしか無いので、
         #   片方でも欠けたら回さない。
@@ -694,13 +730,20 @@ def main():
         if f"{jcd}-{rno}" in done:
             buy, buy_alt = [], None      # 帯はもう通知済み。二重に出さない
         buy_ana = []
-        if ana_on and f"{jcd}-{rno}a" not in done:
+        # ★穴側は従来の足切り(ana_ok)のまま。帯が波・風を外したあとも、
+        #   登録した母集団を変えない（ana_howto.md §8 の事前登録）。
+        if (ana_on and f"{jcd}-{rno}a" not in done
+                and SR.ana_ok(jcd, wave, wind)):
             picked = set(buy)
             buy_ana = [i for i in SR.pick_ana(q, cp, odds) if i not in picked]
         if not buy and f"{jcd}-{rno}" not in done:
             # ★帯の見送り内訳は、穴側が出たかどうかと関係なく数える。
             #   ここを穴側とまとめると、帯の「見送り」の数字が試験ルールで動く
-            skip("帯の外／p/q不足")
+            # ★補正モデルが読めなくて見送った回を「帯の外」に混ぜない。
+            #   混ぜると、モデルが丸ごと落ちた日が「買い目が出なかった普通の日」
+            #   に見えてしまい、気づけない。
+            skip("補正モデルが読めない" if (th is None and not base_ok)
+                 else "帯の外／p/q不足")
         if not buy and not buy_ana:
             print(f"  {tag} "
                   + ("穴側も出ず(帯は通知済み)" if f"{jcd}-{rno}" in done
@@ -715,7 +758,8 @@ def main():
             print(f"  {tag} ★{len(buy)}点  波{wave:.0f}cm 風{wind:.0f}m  "
                   + " ".join(f"{F.COMBOS[i]}(p/q {cp[i]/q[i]:.2f})" for i in buy))
         if buy_ana:
-            print(f"  {tag} 穴{len(buy_ana)}点(試験)  "
+            print(f"  {tag} 穴{len(buy_ana)}点(試験"
+                  + ("・シャドー" if ana_shadow else "") + ")  "
                   + " ".join(f"{F.COMBOS[i]}({odds[i]:.1f}倍 p/q {cp[i]/q[i]:.2f})"
                              for i in buy_ana))
         if args.dry:
@@ -724,8 +768,15 @@ def main():
         #   まとめて判定すると、失敗した側のせいで成功した側まで
         #   次の周に二重通知される。
         ok = bool(buy) and notify(topic, jcd, rno, net, buy, cp, q, wave, wind)
-        ok_ana = bool(buy_ana) and notify_ana(topic, jcd, rno, net, buy_ana,
-                                              cp, q, odds, wave, wind)
+        # ★シャドーのときは通知を出さず、記録だけ残す。done にも入れるので
+        #   同じレースを次の周でまた記録することはない。
+        if not buy_ana:
+            ok_ana = False
+        elif ana_shadow:
+            ok_ana = True
+        else:
+            ok_ana = notify_ana(topic, jcd, rno, net, buy_ana,
+                                cp, q, odds, wave, wind)
         if ok or ok_ana:
             # ★通知した事実を真っ先に残す。site_* が落ちたときに
             #   「通知は出たのに done に無い」状態になると二重通知になる
@@ -741,13 +792,14 @@ def main():
                          lanes=lanes, p1=p1, q1=q1, nmot=nmot,
                          buys_alt=(None if buy_alt is None
                                    else [F.COMBOS[i] for i in buy_alt]),
-                         rule=("g+h" if m3 is not None else
-                               ("g" if m2 is not None else "base")),
+                         rule=("g+h" if (m2 is not None and m3 is not None)
+                               else "g" if m2 is not None else "base"),
                          top=tops)
                 bought += 1
             if ok_ana:
                 site_ana(date, VENUE.get(jcd, str(jcd)), jcd, rno, net,
-                         buy_ana, cp, q, odds, wave, wind, top=tops)
+                         buy_ana, cp, q, odds, wave, wind, top=tops,
+                         shadow=ana_shadow)
                 bought_ana += 1
             site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net,
                       "買い" if ok else "穴のみ",
@@ -756,7 +808,10 @@ def main():
     if not args.dry and skips:
         site_log(date, None, None, None, None, None, None, None, None,
                  None, None, skips)
-    print(f"通知 {bought}件" + (f"  穴側(試験) {bought_ana}件" if bought_ana else ""))
+    print(f"通知 {bought}件"
+          + (f"  穴側(試験) {bought_ana}件"
+             + ("（シャドー。通知していません）" if ana_shadow else "")
+             if bought_ana else ""))
 
 
 if __name__ == "__main__":

@@ -41,7 +41,7 @@ def collect(args):
     kw = {}
     for path in sorted(glob.glob(f"{args.kfile}/*.json.gz")):
         d = int(os.path.basename(path)[:8])
-        if d < args.frm:
+        if not (args.frm <= d <= args.to):
             continue
         with gzip.open(path, "rt", encoding="utf-8") as f:
             for r in json.load(f)["races"]:
@@ -50,7 +50,7 @@ def collect(args):
     tokf = {os.path.basename(x)[:8]: x for x in glob.glob(f"{args.tokuten}/*.json.gz")}
     out = []
     rawf = [x for x in sorted(glob.glob(f"{args.raw}/*.json.gz"))
-            if int(os.path.basename(x)[:8]) >= args.frm]
+            if args.frm <= int(os.path.basename(x)[:8]) <= args.to]
     t0 = time.time()
     for k, path in enumerate(rawf):
         d = os.path.basename(path)[:8]
@@ -76,7 +76,7 @@ def collect(args):
             if r["hit"] not in F.CIX:
                 continue
             wave, wind = kw.get((int(d), r["jcd"], r["rno"]), (None, None))
-            if not SR.race_ok(r["jcd"], wave, wind):
+            if not SR.band_ok(r["jcd"], wave, wind):
                 continue
             q, q1 = F.market_probs(od)
             if q is None:
@@ -117,45 +117,108 @@ def collect(args):
     return out
 
 
-def ana_report(A):
-    """穴側(試験)の成績を出す。A の列は (pq, q, odds, hit, date, race)
+def boot_roi(hh, od, ri, n=2000, seed=0):
+    """レース単位のブートストラップ。戻りは (95%区間, P(回収率>100%))
+
+    ★点単位でリサンプルしてはいけない。同じレースの複数点は一緒に当たり
+      一緒に外れる（相関する）ので、点単位だと区間が不当に狭くなる。
+    """
+    r = hh * od * 100.0
+    races = np.unique(ri)
+    ix = {v: k for k, v in enumerate(races)}
+    ii = np.array([ix[v] for v in ri])
+    rng = np.random.default_rng(seed)
+    boot = np.empty(n)
+    for t in range(n):
+        w = np.bincount(rng.integers(0, len(races), len(races)),
+                        minlength=len(races))[ii]
+        tot = w.sum()
+        boot[t] = (r * w).sum() / tot if tot else np.nan
+    boot = boot[~np.isnan(boot)]
+    if len(boot) == 0:
+        return (np.nan, np.nan), np.nan
+    return tuple(np.quantile(boot, [0.025, 0.975])), float((boot > 100).mean())
+
+
+def _ana_line(A, lab):
+    """1ブロック分の成績。A の列は (pq, q, odds, hit, date, race, rmin)"""
+    if len(A) == 0:
+        print(f"  {lab}: 買い目なし")
+        return
+    qq, od, hh, dd, ri = A[:, 1], A[:, 2], A[:, 3], A[:, 4], A[:, 5]
+    r = hh * od * 100.0
+    nr = len(np.unique(ri))
+    (lo, hi), pwin = boot_roi(hh, od, ri)
+    print(f"  {lab}: {nr:,}レース {len(A):,}点  的中{int(hh.sum())}本  "
+          f"回収率 {r.mean():6.1f}%  95%区間 [{lo:.0f}, {hi:.0f}]  "
+          f"P(>100%) {pwin:.2f}  実測/市場 {hh.sum()/qq.sum():.3f}")
+
+
+def _ana_months(A):
+    """月別の内訳（§6-3 の2番目）"""
+    if len(A) == 0:
+        return
+    ym = (A[:, 4] // 100).astype(np.int64)
+    print("    月別:  年月      レース   点数  的中   回収率")
+    for m in np.unique(ym):
+        k = ym == m
+        od, hh, ri = A[k, 2], A[k, 3], A[k, 5]
+        print(f"           {m}  {len(np.unique(ri)):6,} {k.sum():6,} "
+              f"{int(hh.sum()):5}  {(hh * od * 100.0).mean():7.1f}%")
+
+
+def ana_report(A, thr):
+    """穴側(試験)の成績を出す。A の列は (pq, q, odds, hit, date, race, rmin)
 
     ★メモ §41。帯とは別勘定。ここでも混ぜない。
-      本番は select_rule.pick_ana がそのまま選ぶので、
-      ここに来る時点で「1着≠1号艇 / 8〜15倍 / p/q>閾値」を満たしている。
+      買い目は select_rule.pick_ana がそのまま選んでいる（レース最低オッズの
+      足切りだけは、<thr と >=thr の両方を出すためにここで掛ける）。
     """
-    if len(A) == 0:
-        print("\n【穴側(試験)】買い目なし")
-        return
-    pq, qq, od, hh, dd, ri = (A[:, i] for i in range(6))
-    nr = len(np.unique(ri))
-    r = hh * od * 100.0
-    e = np.quantile(dd, [0, 1 / 3, 2 / 3, 1.0])
-    # ★最後の期だけ右端を含める。両方を閉区間にすると、分位点にぴったり
-    #   一致した日のレースが2つの期に入る
-    masks = [(dd >= lo) & (dd < hi) for lo, hi in zip(e[:-1], e[1:])]
-    masks[-1] = (dd >= e[-2]) & (dd <= e[-1])
-    per = " / ".join(f"{(hh[m] * od[m] * 100.0).mean():.0f}%"
-                     for m in masks if m.sum() > 0)
     print(f"\n【穴側(試験)】1着≠1号艇 / オッズ"
-          f"{SR.ANA_ODDS_LO:.0f}〜{SR.ANA_ODDS_HI:.0f}倍 / p/q>{SR.ANA_PQ_MIN}"
-          f" / レース最低オッズ<{SR.ANA_RACE_MIN_ODDS:.0f}倍")
-    print(f"  {nr:,}レース {len(A):,}点（平均 {len(A)/nr:.2f}点/レース）")
-    print(f"  回収率 {r.mean():6.1f}% ±{r.std(ddof=1)/np.sqrt(len(A)):4.1f}  "
-          f"実測/市場 {hh.sum()/qq.sum():.3f}  的中 {int(hh.sum())}本  3期 {per}")
-    print("  検証値(225日): 466レース 551点 的中73本 153.6% 2.04")
+          f"{SR.ANA_ODDS_LO:.0f}〜{SR.ANA_ODDS_HI:.0f}倍 / p/q>{SR.ANA_PQ_MIN}")
+    if len(A) == 0:
+        print("  買い目なし")
+        return
+    rmin = A[:, 6]
+    lo = A[rmin < thr]
+    hi = A[rmin >= thr]
+    _ana_line(lo, f"版47  レース最低オッズ<{thr:.0f}倍 ")
+    _ana_months(lo)
+    _ana_line(A, "版45  足切りなし          ")
+    print("  【最低オッズフィルタの確認（§6-4）】")
+    print(f"  （<{thr:.0f}倍 の側は上の「版47」と同じ集合なので再掲しない）")
+    _ana_line(hi, f"  最低オッズ>={thr:.0f}倍")
+    if len(lo) and len(hi):
+        d = (lo[:, 3] * lo[:, 2] * 100.0).mean() - (hi[:, 3] * hi[:, 2] * 100.0).mean()
+        print(f"    ROI(<{thr:.0f}) − ROI(>={thr:.0f}) = {d:+.1f}pt"
+              f"（正なら『確認』）")
+    print("  参考(履歴): p/q>1.097 だった頃の225日 "
+          "466レース 551点 的中73本 153.6% 2.04")
+    print("  ★いまのしきい値の期待値ではない。独立10か月では 87.5% だった"
+          "（ana_howto.md）")
     print("  ★これは実弾ではない。理由が説明できていないルール（メモ §41）")
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--raw", default="v22/raw")
+    ap.add_argument("--raw", "--raw-dir", dest="raw", default="v22/raw",
+                    help="raw の置き場。穴埋めデータを試すときはここを差し替える")
     ap.add_argument("--tokuten", default="v22/tokuten")
     ap.add_argument("--pure", default="pure.npz")
     ap.add_argument("--kfile", default="v22/kfile")
     ap.add_argument("--model", default="model")
     ap.add_argument("--from", dest="frm", type=int, default=20250401)
+    ap.add_argument("--to", dest="to", type=int, default=99999999,
+                    help="期間の終端 YYYYMMDD（既定は終端なし）")
+    ap.add_argument("--ana-min-odds", dest="ana_min_odds", type=float,
+                    default=None,
+                    help="select_rule.ANA_RACE_MIN_ODDS を上書きする"
+                         "（版45相当＝足切りなしは inf）")
     args = ap.parse_args()
+    if args.ana_min_odds is not None:
+        SR.ANA_RACE_MIN_ODDS = args.ana_min_odds
+    print(f"期間 {args.frm}〜{args.to} / raw={args.raw} / "
+          f"穴側のレース最低オッズ足切り <{SR.ANA_RACE_MIN_ODDS}")
     import lightgbm as lgb
 
     with open(f"{args.model}/features.json", encoding="utf-8") as f:
@@ -174,6 +237,12 @@ def main():
            (["h"] if m3 is not None else []))
     rows = {k: [] for k in names}
     ana_rows = []
+    # ★レース最低オッズの足切りは pick_ana の中で掛かる。ここで一旦外して
+    #   「足切り前」を全部集め、レースの最低オッズ(rmin)を一緒に持たせる。
+    #   報告側で rmin<thr を掛ければ足切りありと完全に同じ集合になり、
+    #   同時に >=thr 側（捨てている分）の成績も出せる。
+    ana_thr = SR.ANA_RACE_MIN_ODDS
+    SR.ANA_RACE_MIN_ODDS = float("inf")
     for rno_, (d, lanes, mt, od, q, q1, hit) in enumerate(races):
         X = F.build_race(lanes, mt, q1)
         raw = np.asarray(m1.predict(X), dtype=float)
@@ -196,14 +265,16 @@ def main():
                 rows[k].append((cp[i] / q[i], q[i], od[i],
                                 1.0 if i == hit else 0.0, d, rno_, i))
         # ★穴側(試験)。本番と同じ関数で選ぶ（自分で条件を書き直さない）
-        if "g+h" in var:
+        #   ★帯は波・風の足切りを外したが、穴側は従来のまま。ここで掛け直す
+        if "g+h" in var and SR.ana_ok(mt["jcd"], mt["wave"], mt["wind"]):
             cpa = var["g+h"] / var["g+h"].sum()
             band = set(SR.pick(q, cpa, SR.PQ_MIN_GH))
             for i in SR.pick_ana(q, cpa, od):
                 if i in band:
                     continue
                 ana_rows.append((cpa[i] / q[i], q[i], od[i],
-                                 1.0 if i == hit else 0.0, d, rno_))
+                                 1.0 if i == hit else 0.0, d, rno_,
+                                 float(od.min())))
 
     def report(A, lab, ns):
         pq, qq, od, hh, dd = (A[:, i] for i in range(5))
@@ -255,6 +326,7 @@ def main():
             boot[t] = ((ret(o1) * w[i1]).sum() - (ret(o0) * w[i0]).sum()) / nb
         return d, boot.std(ddof=1), float((boot > 0).mean()), len(o0), len(o1)
 
+    SR.ANA_RACE_MIN_ODDS = ana_thr
     AR = {k: np.array(v) for k, v in rows.items()}
     A0 = AR["base"]
     n_now = int((A0[:, 0] > SR.PQ_MIN).sum())
@@ -267,7 +339,7 @@ def main():
     for k in names[1:]:
         th = np.quantile(AR[k][:, 0], 1 - n_now / len(AR[k]))
         print(f"\n  【{LAB[k]}】点数を {n_now:,} に揃えるしきい値: {th:.4f}")
-    ana_report(np.array(ana_rows) if ana_rows else np.empty((0, 6)))
+    ana_report(np.array(ana_rows) if ana_rows else np.empty((0, 7)), ana_thr)
     print("\n★同じ点数での「差」（重なりを除いて日単位ブートストラップ）")
     pairs_to_test = [(a, b) for a, b in
                      (("base", "g"), ("g", "g+h"), ("base", "g+h"),
