@@ -34,7 +34,9 @@ import urllib.request
 SITE = "history.json"
 BET_YEN = 100
 PQ_MIN = 1.05          # select_rule と同じ。確定オッズでも満たすか数えるため
-PQ_ANA = 1.097         # 穴側(試験)のしきい値。select_rule.ANA_PQ_MIN と同じ
+PQ_ANA = 1.15          # 穴側(試験)のしきい値。select_rule.ANA_PQ_MIN と同じ
+                       # ★2026-09-20 に 1.097 から変更。それ以前の記録を
+                       #   混ぜて数えると基準が揃わないので注意
 RAW_URL = "https://raw.githubusercontent.com/honda1986/v22/main/raw/{}.json.gz"
 
 COMBOS = [f"{a}-{b}-{c}" for a in range(1, 7) for b in range(1, 7) if b != a

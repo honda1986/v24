@@ -515,7 +515,12 @@ def main():
     #   期待値では上（+2.3pt）だが確かではない（75%）。紙で回している間は
     #   期待値に従う。使わないほうも毎回記録するので、比較は続けられる。
     ap.add_argument("--no-ana", dest="ana", action="store_false", default=True,
-                    help="穴側(試験)を出さない")
+                    help="穴側(試験)を計算しない")
+    # ★穴側は既定でシャドー（記録だけ残して通知しない）。独立期間で87.5%、
+    #   事前登録の判定は「再現せず」だった（ana_howto.md）。しきい値を 1.15 に
+    #   上げても独立期間はトントンまでしか戻らないので、実弾の通知は出さない。
+    ap.add_argument("--ana-notify", dest="ana_notify", action="store_true",
+                    default=False, help="穴側(試験)を通知する（既定は記録のみ）")
     ap.add_argument("--no-g", dest="use_g", action="store_false", default=True,
                     help="2着の補正を使わない（従来の作り方に戻す）")
     args = ap.parse_args()
@@ -548,7 +553,10 @@ def main():
               "ありません（band_howto.md §12）")
     # ★穴側(試験)は g と h の両方が要る。片方でも無ければ回らない（メモ §41）
     ana_on = bool(args.ana and m2 is not None and m3 is not None)
-    print("穴側(試験) " + ("使う" if ana_on else "なし"))
+    ana_shadow = ana_on and not args.ana_notify
+    print("穴側(試験) " + ("なし" if not ana_on else
+                        "記録のみ(シャドー)" if ana_shadow else "通知あり")
+          + f" / p/q>{SR.ANA_PQ_MIN}")
     motor = load_motor()
 
     st_path = f"{STATE_DIR}/notified_{date}.json"
@@ -731,7 +739,8 @@ def main():
             print(f"  {tag} ★{len(buy)}点  波{wave:.0f}cm 風{wind:.0f}m  "
                   + " ".join(f"{F.COMBOS[i]}(p/q {cp[i]/q[i]:.2f})" for i in buy))
         if buy_ana:
-            print(f"  {tag} 穴{len(buy_ana)}点(試験)  "
+            print(f"  {tag} 穴{len(buy_ana)}点(試験"
+                  + ("・シャドー" if ana_shadow else "") + ")  "
                   + " ".join(f"{F.COMBOS[i]}({odds[i]:.1f}倍 p/q {cp[i]/q[i]:.2f})"
                              for i in buy_ana))
         if args.dry:
@@ -740,8 +749,15 @@ def main():
         #   まとめて判定すると、失敗した側のせいで成功した側まで
         #   次の周に二重通知される。
         ok = bool(buy) and notify(topic, jcd, rno, net, buy, cp, q, wave, wind)
-        ok_ana = bool(buy_ana) and notify_ana(topic, jcd, rno, net, buy_ana,
-                                              cp, q, odds, wave, wind)
+        # ★シャドーのときは通知を出さず、記録だけ残す。done にも入れるので
+        #   同じレースを次の周でまた記録することはない。
+        if not buy_ana:
+            ok_ana = False
+        elif ana_shadow:
+            ok_ana = True
+        else:
+            ok_ana = notify_ana(topic, jcd, rno, net, buy_ana,
+                                cp, q, odds, wave, wind)
         if ok or ok_ana:
             # ★通知した事実を真っ先に残す。site_* が落ちたときに
             #   「通知は出たのに done に無い」状態になると二重通知になる
