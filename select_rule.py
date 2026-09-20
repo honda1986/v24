@@ -5,7 +5,9 @@
 
 ┌ 採用したルール ────────────────────────────────────────────┐
 │  1. 水質      淡水の9場では買わない                                    │
-│  2. 水面      波高 0〜2cm かつ 風速 4m未満 のレースだけ買う              │
+│  2. 水面      波高・風速が取れているレースだけ買う（大きさでは切らない） │
+│               ※2026-09-20 に「波0-2cm・風4m未満」の足切りを外した        │
+│                 （穴側(試験)だけは従来の足切りのまま。ana_ok）            │
 │  3. 帯        3連単の組のうち 市場確率 q が 0.12 以上 0.25 未満のものだけ  │
 │  4. モデル    MF(市場+ファンダ)由来の p/q が 1.05 を超える組だけ          │
 │               ※2着3着の補正(g/h)を入れた本番は 1.15 (PQ_MIN_GH)         │
@@ -46,6 +48,7 @@
 TANSUI = {1, 2, 5, 10, 11, 12, 13, 21, 23}
 # 参考: 汽水 {3, 6, 7, 9, 22} / 海水 {4, 8, 14, 15, 16, 17, 18, 19, 20, 24}
 
+# ★この2つは穴側(試験)の足切り(ana_ok)にだけ効く。帯は 2026-09-20 に外した
 WAVE_MAX = 3      # 波高がこの値未満(cm)。つまり 0,1,2cm
 WIND_MAX = 4      # 風速がこの値未満(m)。つまり 0〜3m
 Q_LO, Q_HI = 0.12, 0.25    # 市場確率の帯
@@ -188,7 +191,8 @@ def pick_ana(q, p, odds, pq_min=None):
     p     : 各組のモデル確率 (g と h を入れたもの。合計1)
     odds  : 各組の締切前オッズ (120通り。fetch_odds が返す生の倍率)
 
-    ★race_ok は呼び出し側で確かめること。帯と同じ足切りを使う。
+    ★ana_ok は呼び出し側で確かめること。帯は波・風の足切りを外したが、
+      穴側は従来のまま（ana_howto.md §8 の事前登録）。
     ★そのレースの最低オッズが8倍以上なら、この関数は空を返す（メモ §45）。
       オッズが120個そろっていない回も空を返す。
     """
@@ -218,24 +222,51 @@ def pick_ana(q, p, odds, pq_min=None):
     return out
 
 
-def race_ok(jcd, wave_cm, wind_ms):
-    """このレースを買ってよいか。波高・風速は直前情報の値を渡すこと。
+def _weather_ok(wave_cm, wind_ms):
+    """波高・風速が「取れている」か。大きさでは切らない。
 
-    値が取れなかった場合は False(見送り)を返す。
-    無条件に買うより、取れないレースは見送るほうが安全。
+    値が取れなかった場合は False(見送り)。波高と風速はモデルの特徴量でもある
+    ので、取れていないレースは大きさに関係なく見送る。
+    ★下限も見る（2026-09-13 追加）。検証データでは欠損が -1 / -99 で入って
+      おり、上限しか見ないとそれが「波-1cm・風-99m」として買い対象に
+      なってしまう。本番の直前情報は None で来る想定だが、パーサが
+      変わって負値が来たときに黙って買うほうが危ない。
+    """
+    if wave_cm is None or wind_ms is None:
+        return False
+    return float(wave_cm) >= 0 and float(wind_ms) >= 0
+
+
+def band_ok(jcd, wave_cm, wind_ms):
+    """帯（本線）を買ってよいレースか。**淡水を外すだけ**。
+
+    ★2026-09-20: 波0-2cm・風4m未満の足切りを外した（band_howto.md §10〜§14）。
+      ・捨てていた側（風>=4m）は独立期間で 102〜111% と悪くなかった
+      ・点数を揃えて比べると、足切りの有無で優劣が期間ごとに入れ替わる
+      ・17か月を合算して同じ点数で比べても差は +0〜4pt で、95%区間は0をまたぐ
+      つまり「効いている」と確認できないフィルタだった。
+    ★外すと母集団が1.7倍になる。**同じ点数を買うなら、しきい値を下げるより
+      この足切りを外すほうが成績が良い**（通し 101.5% → 104.8%、band_howto §14）。
+    ★淡水除外だけは両期間で明確（淡水86% vs 淡水以外94〜98%）なので残す。
     """
     if int(jcd) in TANSUI:
         return False
-    if wave_cm is None or wind_ms is None:
+    return _weather_ok(wave_cm, wind_ms)
+
+
+def ana_ok(jcd, wave_cm, wind_ms):
+    """穴側(試験・シャドー)のレース足切り。**従来のまま**。
+
+    ★帯は波・風の足切りを外したが、穴側は外さない。
+      穴側は「1.15・シャドー」という形で事前登録している（ana_howto.md §8）。
+      登録した母集団を途中で変えると、その登録が意味をなさなくなる。
+      次の判定が済むまでここは動かさないこと。
+    """
+    if int(jcd) in TANSUI:
         return False
-    w, v = float(wave_cm), float(wind_ms)
-    # ★下限も見る（2026-09-13 追加）。検証データでは欠損が -1 / -99 で入って
-    #   おり、上限しか見ないとそれが「波-1cm・風-99m」として買い対象に
-    #   なってしまう。本番の直前情報は None で来る想定だが、パーサが
-    #   変わって負値が来たときに黙って買うほうが危ない。
-    if w < 0 or v < 0:
+    if not _weather_ok(wave_cm, wind_ms):
         return False
-    return w < WAVE_MAX and v < WIND_MAX
+    return float(wave_cm) < WAVE_MAX and float(wind_ms) < WIND_MAX
 
 
 def pick(q, p, pq_min=None):
@@ -255,7 +286,7 @@ def pick(q, p, pq_min=None):
 
 def decide(jcd, wave_cm, wind_ms, q, p, pq_min=None):
     """1レース分の判定。買わないなら空リスト。買うなら組の添字のリスト。"""
-    if not race_ok(jcd, wave_cm, wind_ms):
+    if not band_ok(jcd, wave_cm, wind_ms):
         return []
     return pick(q, p, pq_min)
 
@@ -272,10 +303,13 @@ if __name__ == "__main__":
     inband = sum(1 for x in q if 0.12 <= x < 0.25)
     print(f"帯 q0.12〜0.25 に入る組: {inband}点")
     print("淡水(戸田=2)は必ず見送り :", decide(2, 1, 2, q, p) == [])
-    print("波6cmは見送り            :", decide(24, 6, 2, q, p) == [])
-    print("風5mは見送り             :", decide(24, 1, 5, q, p) == [])
+    print("波6cmでも帯は買う         :", band_ok(24, 6, 2) is True)
+    print("風5mでも帯は買う          :", band_ok(24, 1, 5) is True)
     print("気象が取れなければ見送り   :", decide(24, None, 2, q, p) == [])
     print("負の値も見送り            :", decide(24, -1, -99, q, p) == [])
+    print("穴側は波6cmを見送る        :", ana_ok(24, 6, 2) is False)
+    print("穴側は風5mを見送る         :", ana_ok(24, 1, 5) is False)
+    print("穴側は波1cm風2mなら買う    :", ana_ok(24, 1, 2) is True)
     sel = decide(24, 1, 2, q, p)
     print(f"大村・波1cm・風2m の買い目: {len(sel)}点  "
           f"(帯{inband}点のうち p/q>1.05 を満たしたもの)")

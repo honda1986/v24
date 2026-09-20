@@ -76,7 +76,7 @@ def collect(args):
             if r["hit"] not in F.CIX:
                 continue
             wave, wind = kw.get((int(d), r["jcd"], r["rno"]), (None, None))
-            if not SR.race_ok(r["jcd"], wave, wind):
+            if not SR.band_ok(r["jcd"], wave, wind):
                 continue
             q, q1 = F.market_probs(od)
             if q is None:
@@ -265,7 +265,8 @@ def main():
                 rows[k].append((cp[i] / q[i], q[i], od[i],
                                 1.0 if i == hit else 0.0, d, rno_, i))
         # ★穴側(試験)。本番と同じ関数で選ぶ（自分で条件を書き直さない）
-        if "g+h" in var:
+        #   ★帯は波・風の足切りを外したが、穴側は従来のまま。ここで掛け直す
+        if "g+h" in var and SR.ana_ok(mt["jcd"], mt["wave"], mt["wind"]):
             cpa = var["g+h"] / var["g+h"].sum()
             band = set(SR.pick(q, cpa, SR.PQ_MIN_GH))
             for i in SR.pick_ana(q, cpa, od):

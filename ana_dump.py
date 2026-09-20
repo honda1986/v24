@@ -31,10 +31,11 @@ ap.add_argument("--odds-lo", type=float, default=2.0)
 ap.add_argument("--odds-hi", type=float, default=60.0)
 args = ap.parse_args()
 
-# ★bt.collect は race_ok を通らないレースを捨ててしまう。足切りを検証したいので
-#   ここでは通し、通ったかどうかを ok 列に残す。
-_race_ok = SR.race_ok
-SR.race_ok = lambda jcd, wave, wind: True
+# ★bt.collect は band_ok を通らないレースを捨ててしまう。足切り（淡水・波・風）
+#   そのものを検証したいので、ここでは全部通し、
+#   従来の足切り(ana_ok)を通ったかどうかを ok 列に残す。
+_ana_ok = SR.ana_ok
+SR.band_ok = lambda jcd, wave, wind: True
 
 m1 = lgb.Booster(model_file=f"{args.model}/lgb_mf.txt")
 m2 = S.load(args.model); m3 = T.load(args.model)
@@ -66,7 +67,7 @@ for rno_, (d, lanes, mt, od, q, q1, hit) in enumerate(races):
     band[list(SR.pick(q, p, SR.PQ_MIN_GH))] = 1.0
     hitv = np.zeros(120); hitv[hit] = 1.0
     rmin = float(od.min())
-    ok = 1.0 if _race_ok(mt["jcd"], mt["wave"], mt["wind"]) else 0.0
+    ok = 1.0 if _ana_ok(mt["jcd"], mt["wave"], mt["wind"]) else 0.0
     i = np.where((od >= args.odds_lo) & (od <= args.odds_hi) & (q > 0))[0]
     if len(i) == 0:
         continue

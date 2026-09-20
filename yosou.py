@@ -622,12 +622,15 @@ def main():
         # 3. 直前情報 → 波・風で足切り
         info = BI.fetch(date, jcd, rno)
         wave, wind = BI.wave_wind(info)
-        if not SR.race_ok(jcd, wave, wind):
+        # ★帯は淡水を外すだけ（2026-09-20、band_howto.md §14）。
+        #   波・風の大きさでは切らない。値が取れないレースは、波高・風速が
+        #   モデルの特徴量でもあるので従来どおり見送る。
+        if not SR.band_ok(jcd, wave, wind):
             print(f"  {tag} 見送り  波{wave} 風{wind}")
-            skip("波・風" if wave is not None else "データ欠")
+            skip("淡水" if int(jcd) in SR.TANSUI else "データ欠")
             if not args.dry:
                 site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net,
-                          "波・風" if wave is not None else "気象が取れない",
+                          "淡水" if int(jcd) in SR.TANSUI else "気象が取れない",
                           wave, wind)
             continue
         pg = card(date, jcd)
@@ -727,7 +730,10 @@ def main():
         if f"{jcd}-{rno}" in done:
             buy, buy_alt = [], None      # 帯はもう通知済み。二重に出さない
         buy_ana = []
-        if ana_on and f"{jcd}-{rno}a" not in done:
+        # ★穴側は従来の足切り(ana_ok)のまま。帯が波・風を外したあとも、
+        #   登録した母集団を変えない（ana_howto.md §8 の事前登録）。
+        if (ana_on and f"{jcd}-{rno}a" not in done
+                and SR.ana_ok(jcd, wave, wind)):
             picked = set(buy)
             buy_ana = [i for i in SR.pick_ana(q, cp, odds) if i not in picked]
         if not buy and f"{jcd}-{rno}" not in done:
