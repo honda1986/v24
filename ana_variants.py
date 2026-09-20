@@ -23,6 +23,14 @@ args = ap.parse_args()
 z = np.load(args.dump, allow_pickle=True)
 A = z["A"]; names = list(z["names"])
 C = {n: A[:, i] for i, n in enumerate(names)}
+# ★ana_dump.py は race_ok（淡水・波・風の足切り）を外して落としている。
+#   穴側は本番で足切りを通ったレースにしか掛からないので、ここで戻す。
+#   これを忘れると淡水や波3cm以上のレースまで混ざり、pick_ana が呼ばれない
+#   レースの成績を数えてしまう。
+if "ok" not in C:
+    raise SystemExit("★このダンプに ok 列がありません。ana_dump.py を"
+                     "作り直してください（足切りの再現に必要）")
+OK = C["ok"] == 1
 pq = C["p"] / C["q"]
 d = C["date"]
 B_ = (d >= 20250501) & (d <= 20260131)     # 独立期間（10か月）
@@ -30,7 +38,7 @@ X_ = (d >= 20260201) & (d <= 20260918)     # ルールを決めた期間
 print(f"全{len(A):,}行  独立期間{B_.sum():,}行  探索期間{X_.sum():,}行")
 
 def sel(mask, lo, hi, pqmin, rmax, notone=True, noband=True):
-    m = mask & (C["odds"] >= lo) & (C["odds"] < hi) & (pq > pqmin) \
+    m = mask & OK & (C["odds"] >= lo) & (C["odds"] < hi) & (pq > pqmin) \
         & (C["rmin"] < rmax)
     if notone:
         m &= C["first"] != 1
@@ -232,3 +240,45 @@ for lab, m in (("版47 8〜15倍/最低<8/p/q>1.097 独立", sel(B_, 8, 15, 1.09
     n = int(m.sum()); back = float((C["hit"][m] * C["odds"][m] * 100).sum())
     print(f"  {lab:<34} 投資 {n*100:7,.0f}円 → 回収 {back:8,.0f}円 "
           f"（{back-n*100:+8,.0f}円）")
+
+
+print("\n\n############ 9. 穴側のしきい値を2期間で決められるか（§7）############")
+print("   他は現行のまま（1着≠1号艇 / 8〜15倍 / 最低<8倍 / 足切りあり）")
+print(f"   {'p/q>':>6} |{'探索 2026/02-09':>18}|{'独立 2025/05-2026/01':>18}|"
+      f"{'通し 点数 的中 回収率 区間 P':>40}")
+for t in (1.10, 1.12, 1.13, 1.14, 1.15, 1.16, 1.17, 1.18, 1.20):
+    line = f"   {t:6.3f} |"
+    rs = []
+    for mk in (X_, B_):
+        m = sel(mk, 8, 15, t, 8)
+        nr, nb, nh, r = roi(m)
+        rs.append(r)
+        line += f" {nb:5,} {r:6.1f}% |"
+    m = sel(B_ | X_, 8, 15, t, 8)
+    nr, nb, nh, r = roi(m)
+    (lo, hi), pw = boot(m)
+    print(line + f" {nb:5,}点 的中{nh:3} {r:6.1f}% [{lo:3.0f},{hi:3.0f}] P={pw:.2f}"
+          + ("  ◎" if rs[0] > 100 and rs[1] > 100 else ""))
+
+print("\n   『両期間とも○%超』は偶然でどれだけ出るか")
+GG = []
+for lo_ in (6, 8, 10, 12):
+    for hi_ in (12, 15, 18, 20):
+        if hi_ <= lo_:
+            continue
+        for t in (1.0, 1.05, 1.097, 1.12, 1.15, 1.18):
+            for rm in (5, 6, 7, 8, 10, 999):
+                mb = sel(B_, lo_, hi_, t, rm)
+                mx = sel(X_, lo_, hi_, t, rm)
+                if mb.sum() < 150 or mx.sum() < 150:
+                    continue
+                GG.append((roi(mx)[3], roi(mb)[3]))
+GG = np.array(GG)
+print(f"   150点以上ある組み合わせ {len(GG)}通り")
+for bar in (100, 110, 120, 130):
+    pa = (GG[:, 0] >= bar).mean(); pb = (GG[:, 1] >= bar).mean()
+    both = int(((GG[:, 0] >= bar) & (GG[:, 1] >= bar)).sum())
+    print(f"     {bar}%以上: 探索 {pa*100:4.0f}% / 独立 {pb*100:4.0f}%  "
+          f"→ 偶然なら {len(GG)*pa*pb:5.1f}通り  実際 {both:3}通り")
+ra = np.argsort(np.argsort(GG[:, 0])); rb = np.argsort(np.argsort(GG[:, 1]))
+print(f"   順位相関 {np.corrcoef(ra, rb)[0, 1]:+.3f}")

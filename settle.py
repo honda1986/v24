@@ -33,7 +33,13 @@ import urllib.request
 
 SITE = "history.json"
 BET_YEN = 100
-PQ_MIN = 1.05          # select_rule と同じ。確定オッズでも満たすか数えるため
+PQ_MIN = 1.05          # select_rule と同じ。補正なしで買ったときの基準
+# ★帯は補正の組み合わせでしきい値が変わる（select_rule と同じ値を置く）。
+#   ここを PQ_MIN(1.05) のままにすると、1.15 で買った組を 1.05 で判定して
+#   しまい、「確定オッズでも基準を満たしたまま」がほぼ素通りの数字になる。
+#   ★2026-09-20 より前に買った記録は 1.097/1.078 で選ばれているので、
+#     新しい基準で見ると厳しめに出る（見落としではなく安全側のずれ）。
+PQ_BAND = {"g+h": 1.15, "g": 1.11, "base": PQ_MIN}
 PQ_ANA = 1.15          # 穴側(試験)のしきい値。select_rule.ANA_PQ_MIN と同じ
                        # ★2026-09-20 に 1.097 から変更。それ以前の記録を
                        #   混ぜて数えると基準が揃わないので注意
@@ -153,7 +159,7 @@ def main():
             for p in nod:
                 od = rm.get((p["jcd"], p["rno"]))
                 if od:
-                    drift(p, od)
+                    drift(p, od, PQ_BAND.get(p.get("rule"), PQ_MIN))
         # ★穴側(試験)も同じ突き合わせをする。ただし別勘定（メモ §41）。
         apend = [p for p in day.get("ana") or [] if p.get("hit") is None]
         if rm:
@@ -247,7 +253,10 @@ def main():
         print(f"  通知時 → 確定   平均 {avg:.3f}倍  中央 {med:.3f}倍  "
               f"下がった {dn:.0f}%")
         if tot:
-            print(f"  確定オッズでも p/q>{PQ_MIN} を満たしたまま  "
+            ths = sorted({PQ_BAND.get(p.get("rule"), PQ_MIN) for p in picks
+                          if p.get("kept") is not None})
+            lab = "/".join(f"{t:g}" for t in ths)
+            print(f"  確定オッズでも p/q>{lab} を満たしたまま  "
                   f"{kept}/{tot}（{kept/tot*100:.0f}%）")
         print(f"  ★素朴な見積りでは回収率 {(avg-1)*100:+.1f}pt。"
               "ただし当たりやすさとの相関を無視した値なので、")

@@ -250,7 +250,8 @@ def site_log(date, place, jcd, rno, close, buys, cp, q, odds, wave, wind, skippe
     _save(SITE, h)
 
 
-def site_ana(date, place, jcd, rno, close, buy, cp, q, odds, wave, wind, top=None):
+def site_ana(date, place, jcd, rno, close, buy, cp, q, odds, wave, wind,
+             top=None, shadow=False):
     """穴側(試験)を day["ana"] に残す。★picks には入れない。
 
     帯の成績と混ざると、どちらが効いているのか分からなくなる。
@@ -277,6 +278,10 @@ def site_ana(date, place, jcd, rno, close, buy, cp, q, odds, wave, wind, top=Non
         # ★そのレースの最低オッズ。§45 の足切り（8倍未満のレースだけ買う）が
         #   効いているかを、あとから記録だけで検算できるようにする
         "omin": round(float(min(odds)), 1),
+        # ★シャドー（通知せず記録だけ）の印。auto_bet はこの印が付いた回を
+        #   買わない。印を付けずに day["ana"] に置くと、ntfy を止めただけでは
+        #   自動投票が実弾で買ってしまう（buy_ana を有効にしている場合）。
+        "shadow": bool(shadow),
         "top": top,
         "combo": None, "pay": None, "hit": None, "ret": None,
     })
@@ -533,7 +538,11 @@ def main():
     now = datetime.now(OF.JST)
     date = args.date or now.strftime("%Y%m%d")
     topic = os.environ.get("NTFY_TOPIC", "")
-    prune(date)
+    # ★prune は当日の通常実行のときだけ。--dry や --date で過去日を指定した回に
+    #   走らせると、その日以外＝**今日の** notified_*.json まで消えてしまい、
+    #   次の本番実行で通知済みのレースを二重に通知する。
+    if not args.dry and date == now.strftime("%Y%m%d"):
+        prune(date)
     model = load_model()
     # ★2着の補正（メモ §30）。model/lgb_2nd.txt が無ければ None で、
     #   そのとき g=1 となり従来とまったく同じ動きになる。
@@ -724,7 +733,11 @@ def main():
         if not buy and f"{jcd}-{rno}" not in done:
             # ★帯の見送り内訳は、穴側が出たかどうかと関係なく数える。
             #   ここを穴側とまとめると、帯の「見送り」の数字が試験ルールで動く
-            skip("帯の外／p/q不足")
+            # ★補正モデルが読めなくて見送った回を「帯の外」に混ぜない。
+            #   混ぜると、モデルが丸ごと落ちた日が「買い目が出なかった普通の日」
+            #   に見えてしまい、気づけない。
+            skip("補正モデルが読めない" if (th is None and not base_ok)
+                 else "帯の外／p/q不足")
         if not buy and not buy_ana:
             print(f"  {tag} "
                   + ("穴側も出ず(帯は通知済み)" if f"{jcd}-{rno}" in done
@@ -779,7 +792,8 @@ def main():
                 bought += 1
             if ok_ana:
                 site_ana(date, VENUE.get(jcd, str(jcd)), jcd, rno, net,
-                         buy_ana, cp, q, odds, wave, wind, top=tops)
+                         buy_ana, cp, q, odds, wave, wind, top=tops,
+                         shadow=ana_shadow)
                 bought_ana += 1
             site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net,
                       "買い" if ok else "穴のみ",
