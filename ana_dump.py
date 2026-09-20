@@ -48,7 +48,8 @@ SEC1 = np.array([int(c[2]) for c in F.COMBOS], dtype=np.float64)
 THI1 = np.array([int(c[4]) for c in F.COMBOS], dtype=np.float64)
 NAMES = ["date", "race", "jcd", "rno", "combo", "first", "second", "third",
          "odds", "q", "p", "hit", "rmin", "band", "wave", "wind", "day_no",
-         "is_final", "p1_first", "q1_first", "p_base", "p_g", "ok", "n_days"]
+         "is_final", "p1_first", "q1_first", "p_base", "p_g", "ok", "n_days",
+         "p_h"]
 chunks = []
 for rno_, (d, lanes, mt, od, q, q1, hit) in enumerate(races):
     X = F.build_race(lanes, mt, q1)
@@ -60,6 +61,7 @@ for rno_, (d, lanes, mt, od, q, q1, hit) in enumerate(races):
     p = base * gv * hv; p = p / p.sum()
     pb = base / base.sum()
     pg = (base * gv); pg = pg / pg.sum()
+    ph = (base * hv); ph = ph / ph.sum()      # h だけを入れた場合
     band = np.zeros(120)
     band[list(SR.pick(q, p, SR.PQ_MIN_GH))] = 1.0
     hitv = np.zeros(120); hitv[hit] = 1.0
@@ -79,7 +81,7 @@ for rno_, (d, lanes, mt, od, q, q1, hit) in enumerate(races):
         one(mt["wind"] if mt["wind"] is not None else -1),
         one(mt["day_no"] or -1), one(mt["is_final"]),
         p1[FIRST1[i].astype(int) - 1], q1[FIRST1[i].astype(int) - 1],
-        pb[i], pg[i], one(ok), one(mt["n_days"] or -1)], axis=1))
+        pb[i], pg[i], one(ok), one(mt["n_days"] or -1), ph[i]], axis=1))
     if (rno_ + 1) % 10000 == 0:
         print(f"  {rno_+1}/{len(races)}", flush=True)
 

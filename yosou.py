@@ -538,6 +538,14 @@ def main():
         m2 = m3 = None
     print("2着の補正 " + ("使う" if m2 is not None else "なし") +
           " / 3着の補正 " + ("使う" if m3 is not None else "なし"))
+    # ★--no-g は「従来の作り方(補正なし)に戻す」ための明示の指定。そのときだけ
+    #   補正なしで買ってよい。指定していないのに補正が無いのは配置の事故なので、
+    #   帯は買わずに知らせる（黙って負けるしきい値で買うほうが危ない）。
+    base_ok = not args.use_g
+    if args.use_g and m2 is None:
+        print("★2着の補正(g)が読めません。帯は買いません。"
+              "h だけ／補正なしでは、両期間そろって100%を超えるしきい値が"
+              "ありません（band_howto.md §12）")
     # ★穴側(試験)は g と h の両方が要る。片方でも無ければ回らない（メモ §41）
     ana_on = bool(args.ana and m2 is not None and m3 is not None)
     print("穴側(試験) " + ("使う" if ana_on else "なし"))
@@ -669,21 +677,29 @@ def main():
         #   どちらも毎回計算して記録する。あとから比べられるようにするため。
         buy_base = SR.pick(q, cp)
         buy_alt = None
-        if m2 is not None or m3 is not None:
+        # ★どの補正が揃っているかでしきい値が変わる（band_howto.md §12）。
+        #   g+h    → PQ_MIN_GH (1.15)
+        #   g だけ → PQ_MIN_G  (1.11)
+        #   h だけ → **買わない**。両期間そろって100%を超えるしきい値が無い。
+        #   ★前は「h があれば PQ_MIN_GH」と書いていたため、g が欠けて h だけ
+        #     残った場合に、検証していない組み合わせを g+h 用のしきい値で
+        #     買ってしまう形になっていた（2026-09-20 修正）。
+        th = (SR.PQ_MIN_GH if (m2 is not None and m3 is not None)
+              else SR.PQ_MIN_G if m2 is not None else None)
+        if th is not None:
             mt = dict(meta, wave=wave, wind=wind)
             qa = np.asarray(q, float)
-            cpg = cp.copy()
-            if m2 is not None:
-                g = SEC.gmatrix(m2, lanes, mt, qa, F.FIRST, SEC_IDX)
-                cpg = cpg * g[F.FIRST, SEC_IDX]
+            g = SEC.gmatrix(m2, lanes, mt, qa, F.FIRST, SEC_IDX)
+            cpg = cp * g[F.FIRST, SEC_IDX]
             if m3 is not None:
                 cpg = cpg * THI.hvector(m3, lanes, mt, qa,
                                         F.FIRST, SEC_IDX, THI_IDX)
             cpg = cpg / cpg.sum()
-            th = SR.PQ_MIN_GH if m3 is not None else SR.PQ_MIN_G
             cp, buy, buy_alt = cpg, SR.pick(q, cpg, th), buy_base
+        elif base_ok:
+            buy = buy_base           # --no-g で明示的に従来の作り方にしたとき
         else:
-            buy = buy_base
+            buy = []                 # 補正が壊れている。黙って劣化させない
         # ★穴側(試験)。メモ §41。帯とは別勘定で持つ。
         #   g と h の両方が入っているときだけ。検証がその形でしか無いので、
         #   片方でも欠けたら回さない。
@@ -741,8 +757,8 @@ def main():
                          lanes=lanes, p1=p1, q1=q1, nmot=nmot,
                          buys_alt=(None if buy_alt is None
                                    else [F.COMBOS[i] for i in buy_alt]),
-                         rule=("g+h" if m3 is not None else
-                               ("g" if m2 is not None else "base")),
+                         rule=("g+h" if (m2 is not None and m3 is not None)
+                               else "g" if m2 is not None else "base"),
                          top=tops)
                 bought += 1
             if ok_ana:
