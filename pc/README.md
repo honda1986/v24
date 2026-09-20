@@ -258,14 +258,18 @@ PC の `--dry` のログに出る「★N点 …」「穴N点(試験) …」を�
 
 ## 7. 自動投票を同じ PC で動かすなら
 
-`auto_bet/config.json` の `history_url` を**ローカルのファイル**にできます。
+**何もしなくてもそうなります。** `auto_bet/` は v24 の中にあるので、
+`history_path`（既定 `../history.json`）が同じ PC の history.json を指します。
+raw.githubusercontent の5分キャッシュも push 待ちも無くなり、締切ぎりぎりの
+レースにも間に合います。
 
-```json
-"history_url": "C:\\boat\\v24\\history.json"
-```
+手元のファイルを使うのは「今日のぶんがあって `last_run` が30分以内」のときだけ。
+書き込み中だったり、別のフォルダに残った古い clone だったりすれば、黙って
+`history_url`（GitHub）に切り替わります。買い目を取りこぼしません。
 
-raw.githubusercontent の5分キャッシュも、push 待ちも無くなります。
-yosou が書いている最中は読めないことがありますが、その周は何もせず次へ回ります。
+`auto_bet/config.json` は git で配っていません（`config.example.json` が見本で、
+無ければ起動時に作られます）。配ってしまうと、runner の `reset --hard` で毎回
+もとに戻されるか、「データ以外が変わっている」と見なされて取り込みが止まります。
 
 自動投票のタスクは画面付きの Chrome を使うので、
 **「ユーザーがログオンしているときのみ実行」**にしてください（他のタスクと違います）。

@@ -86,6 +86,59 @@ def fetch(url, timeout=TIMEOUT, opener=urllib.request.urlopen):
     return data, ""
 
 
+STALE_MINUTES = 30
+
+
+def _hhmm(text):
+    """history.json の last_run（"HH:MM"）を分に直す。読めなければ None"""
+    try:
+        h, m = str(text).split(":")
+        return int(h) * 60 + int(m)
+    except (ValueError, AttributeError):
+        return None
+
+
+def freshness(history, date, now, stale_minutes=STALE_MINUTES):
+    """手元の history.json が「いま動いている v24 のもの」かを見る
+
+    ★これが無いと危ない。別のフォルダに残った古い clone を掴むと、
+      今日の買い目が永久に出てこないのに、何も言わずに黙って動き続ける。
+      新しくなければ GitHub 側に逃がす。
+    """
+    day = pick_day(history, date)
+    if day is None:
+        return False, f"手元に今日（{date}）がありません"
+    last = _hhmm(day.get("last_run"))
+    if last is None:
+        return False, "手元に last_run がありません"
+    gap = now.hour * 60 + now.minute - last
+    if gap > stale_minutes:
+        return False, f"手元は{gap}分 古いです（最後 {day.get('last_run')}）"
+    return True, ""
+
+
+def resolve(path, url, date, now, **kw):
+    """手元のファイルを先に見て、新しくなければ GitHub から取る
+
+    返すのは (中身, 取れなかった理由, どこから取ったか)。
+    同じ PC で v24 も動いているなら手元が使える。raw.githubusercontent の
+    5分キャッシュも push 待ちも無くなるので、締切ぎりぎりでも間に合う。
+    """
+    local_why = ""
+    if path:
+        data, why = read_file(path)
+        if data is not None:
+            ok, why = freshness(data, date, now)
+            if ok:
+                return data, "", "手元"
+        local_why = why
+    data, why = fetch(url, **kw)
+    where = "GitHub" + (f"（{local_why}）" if local_why else "")
+    if data is None:
+        return None, (f"{local_why} / {why}" if local_why else why), where
+    return data, "", where
+
+
 def pick_day(history, date):
     """今日の date に一致する要素だけ取り出す。無ければ None
 

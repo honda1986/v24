@@ -256,6 +256,105 @@ class TestLocalHistory(unittest.TestCase):
         self.assertEqual(data["days"][0]["picks"][0]["place"], "びわこ")
 
 
+class TestResolve(unittest.TestCase):
+    """手元と GitHub のどちらから取るか
+
+    ★手元を無条件に使わないこと。別のフォルダに残った古い clone を掴むと、
+      今日の買い目が出ないまま黙って動き続ける。
+    """
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.path = os.path.join(self.dir, "history.json")
+        self.asked = []
+
+    def put(self, last_run="14:45", date=DATE):
+        d = day([race()])
+        d["last_run"] = last_run
+        d["date"] = date
+        with open(self.path, "w", encoding="utf-8") as f:
+            json.dump({"days": [d]}, f, ensure_ascii=False)
+
+    def opener(self, body=None):
+        outer = self
+
+        class Res:
+            def __enter__(self_in):
+                outer.asked.append(1)
+                return self_in
+
+            def __exit__(self_in, *a):
+                return False
+
+            def read(self_in):
+                d = day([race(place="GitHubから")])
+                d["date"] = DATE
+                return json.dumps(body if body is not None
+                                  else {"days": [d]}).encode("utf-8")
+
+        return lambda *a, **k: Res()
+
+    def get(self, path=None):
+        return history_source.resolve(
+            self.path if path is None else path,
+            "https://example.invalid/h.json", DATE, NOW, opener=self.opener())
+
+    def test_手元が新しければ手元を使う(self):
+        self.put("14:45")                      # いまは 14:50
+        data, why, where = self.get()
+        self.assertEqual((why, where), ("", "手元"))
+        self.assertEqual(self.asked, [])       # GitHub には行っていない
+        self.assertEqual(data["days"][0]["picks"][0]["place"], "大村")
+
+    def test_ちょうど30分はまだ手元(self):
+        self.put("14:20")
+        self.assertEqual(self.get()[2], "手元")
+
+    def test_古ければGitHubに逃げる(self):
+        self.put("13:30")                      # 80分前
+        data, why, where = self.get()
+        self.assertEqual(why, "")
+        self.assertTrue(where.startswith("GitHub"))
+        self.assertIn("80分", where)
+        self.assertEqual(data["days"][0]["picks"][0]["place"], "GitHubから")
+
+    def test_手元に今日が無ければGitHub(self):
+        self.put("14:45", date="20260917")
+        where = self.get()[2]
+        self.assertTrue(where.startswith("GitHub"))
+        self.assertIn("今日", where)
+
+    def test_書き込み中ならGitHub(self):
+        with open(self.path, "w", encoding="utf-8") as f:
+            f.write('{"days": [{"dat')
+        self.assertIn("書き込み中", self.get()[2])
+
+    def test_last_runが無ければGitHub(self):
+        d = day([race()])
+        d["date"] = DATE
+        d.pop("last_run", None)
+        with open(self.path, "w", encoding="utf-8") as f:
+            json.dump({"days": [d]}, f, ensure_ascii=False)
+        self.assertIn("last_run", self.get()[2])
+
+    def test_手元を使わない設定ならGitHubだけ(self):
+        self.put("14:45")
+        data, why, where = self.get(path="")
+        self.assertEqual(where, "GitHub")
+        self.assertEqual(data["days"][0]["picks"][0]["place"], "GitHubから")
+
+    def test_両方だめなら理由が両方出る(self):
+        def boom(*a, **k):
+            raise OSError("ネット断")
+
+        data, why, _ = history_source.resolve(
+            os.path.join(self.dir, "無い.json"),
+            "https://example.invalid/h.json", DATE, NOW, opener=boom)
+        self.assertIsNone(data)
+        self.assertIn("ありません", why)
+        self.assertIn("ネット断", why)
+
+
 class TestBetStore(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()
@@ -332,6 +431,38 @@ class TestConfig(unittest.TestCase):
     def test_1日の上限が1点ぶんに満たなければ止まる(self):
         with self.assertRaises(config_mod.ConfigError):
             cfg(bet_yen=100, max_yen_per_day=50)
+
+
+class TestEnsureConfig(unittest.TestCase):
+    """config.json は git で配らない。無ければ見本から作る"""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.path = os.path.join(self.dir, "config.json")
+        self.sample = os.path.join(self.dir, "config.example.json")
+
+    def put(self, path, **over):
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(over, f, ensure_ascii=False)
+
+    def test_無ければ見本から作る(self):
+        self.put(self.sample, bet_yen=300)
+        path, note = config_mod.ensure(self.path)
+        self.assertTrue(os.path.exists(path))
+        self.assertIn("作りました", note)
+        self.assertEqual(config_mod.load(path).bet_yen, 300)
+
+    def test_あれば触らない(self):
+        self.put(self.sample, bet_yen=100)
+        self.put(self.path, bet_yen=500)
+        _, note = config_mod.ensure(self.path)
+        self.assertEqual(note, "")
+        self.assertEqual(config_mod.load(self.path).bet_yen, 500)
+
+    def test_見本も無ければ何もしない(self):
+        path, note = config_mod.ensure(self.path)
+        self.assertFalse(os.path.exists(path))
+        self.assertEqual(note, "")
 
 
 class TestConfirmArea(unittest.TestCase):
