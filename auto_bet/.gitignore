@@ -1,3 +1,6 @@
+# 人それぞれの設定。git で配らない（配ると runner の reset --hard と喧嘩する）
+# 無ければ config.example.json から作られる
+config.json
 # ログイン状態が入っている。絶対に共有しない
 chrome_profile/
 # 投票の記録・ログ・確認画面のスクショは手元だけのもの

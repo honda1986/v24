@@ -118,6 +118,9 @@ def ask(label, kind, now):
 
 
 def main():
+    _, note = config_mod.ensure(PATH)      # 無ければ見本から作る
+    if note:
+        print(note)
     if not os.path.exists(PATH):
         print(f"設定ファイルがありません: {PATH}")
         return 2

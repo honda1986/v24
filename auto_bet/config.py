@@ -9,6 +9,7 @@
 """
 import json
 import os
+import shutil
 from dataclasses import dataclass, field
 
 DEFAULTS = {
@@ -21,6 +22,7 @@ DEFAULTS = {
     "close_min_minutes": 0,
     "close_max_minutes": 25,
     "history_url": "https://raw.githubusercontent.com/honda1986/v24/main/history.json",
+    "history_path": "../history.json",
     "poll_seconds": 120,
     "keepalive_minutes": 5,
     "telebote_url": "",
@@ -50,6 +52,7 @@ class Config:
     close_min_minutes: float = 0
     close_max_minutes: float = 25
     history_url: str = DEFAULTS["history_url"]
+    history_path: str = DEFAULTS["history_path"]
     poll_seconds: int = 120
     keepalive_minutes: int = 5
     telebote_url: str = ""
@@ -131,6 +134,7 @@ def from_dict(d, base_dir="."):
         close_min_minutes=_as_num(d, "close_min_minutes", lo=0),
         close_max_minutes=_as_num(d, "close_max_minutes", lo=0),
         history_url=_as_str(d, "history_url", required=True),
+        history_path=_as_str(d, "history_path"),
         poll_seconds=_as_int(d, "poll_seconds", lo=10),
         keepalive_minutes=_as_int(d, "keepalive_minutes", lo=0),
         telebote_url=_as_str(d, "telebote_url"),
@@ -159,6 +163,31 @@ def from_dict(d, base_dir="."):
     known = set(DEFAULTS)
     cfg.unknown_keys = sorted(k for k in d if not k.startswith("_") and k not in known)
     return cfg
+
+
+EXAMPLE = "config.example.json"
+
+
+def ensure(path):
+    """config.json が無ければ、見本（config.example.json）から作る
+
+    ★config.json は git で配らないこと。人それぞれの設定（金額・約定を読んだか）が
+      入るので、追跡させると PC 側で困る:
+        - runner.py の reset --hard で毎回もとに戻される、か
+        - 「データ以外が変わっている」と見なされて、毎周の取り込みが止まる
+      配らなければ、どちらも起きない。消えても次の起動でここが作り直す。
+
+    返すのは (パス, 人に伝えること)。
+    """
+    path = os.path.abspath(path)
+    if os.path.exists(path):
+        return path, ""
+    sample = os.path.join(os.path.dirname(path), EXAMPLE)
+    if not os.path.exists(sample):
+        return path, ""
+    shutil.copyfile(sample, path)
+    return path, (f"{EXAMPLE} から {os.path.basename(path)} を作りました。"
+                  "金額などは run.bat の「設定」から直せます")
 
 
 def load(path):

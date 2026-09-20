@@ -24,8 +24,15 @@
   ],
   "close_min_minutes": 0,
   "close_max_minutes": 25,
-  "_5_取得元": "v24 が書いた history.json",
+  "_5_取得元": [
+    "v24 が書いた history.json を読むだけ（書き込みはしない）。",
+    "同じ PC で v24 も動かしているなら history_path（手元のファイル）が先に使われる。",
+    "手元が30分以上古ければ、黙って history_url（GitHub）に切り替える。",
+    "＝別のフォルダに残った古い clone を掴んでも、買い目を取りこぼさない。",
+    "手元を使いたくなければ history_path を \"\" にする。"
+  ],
   "history_url": "https://raw.githubusercontent.com/honda1986/v24/main/history.json",
+  "history_path": "../history.json",
   "poll_seconds": 120,
   "_5b_ログイン維持": "買い目が無い時間が続くとログアウトさせられるので、この分数ごとに「開催情報更新」を押す。0 で何もしない",
   "keepalive_minutes": 5,

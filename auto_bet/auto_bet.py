@@ -92,7 +92,8 @@ class Runner:
         self.bet_fn = bet_fn
         self.keepalive_fn = keepalive_fn
         self.cleanup_fn = cleanup_fn
-        self.fetch_fn = fetch_fn or (lambda url: history_source.fetch(url))
+        self.fetch_fn = fetch_fn or self._fetch
+        self._where_said = ""
         self.now_fn = now_fn or now
         self.stop_path = cfg.path("stop_file")
         self.halt_reason = ""
@@ -100,6 +101,21 @@ class Runner:
         self._dry_races = set()
         self._late_said = set()
         self._last_touch = None
+
+    def _fetch(self, url):
+        """手元の history.json を先に見る。無ければ／古ければ GitHub から
+
+        同じ PC で v24 も回しているなら、手元のほうが数分早い。
+        取得元が変わったときだけ1行残す（毎周書くとログが埋まる）。
+        """
+        at = self.now_fn()
+        path = self.cfg.path("history_path") if self.cfg.history_path else ""
+        history, why, where = history_source.resolve(
+            path, self.cfg.history_url, date_str(at), at)
+        if where != self._where_said:
+            self.log.event("取得元", where)
+            self._where_said = where
+        return history, why
 
     def stopped(self):
         return os.path.exists(self.stop_path)
@@ -363,6 +379,9 @@ def main(argv=None):
                     help="疑似の買い目で画面操作を試す（dry / check だけ。例 17-3 や 宮島-3-2-1-4）")
     args = ap.parse_args(argv)
 
+    _, note = config_mod.ensure(args.config)
+    if note:
+        print(note)
     try:
         cfg = config_mod.load(args.config)
     except config_mod.ConfigError as e:
