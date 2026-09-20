@@ -43,9 +43,9 @@ assert m2 is not None and m3 is not None
 races = bt.collect(args)
 print(f"レース {len(races):,}", flush=True)
 
-FIRST1 = np.array([int(c[0]) for c in F.COMBOS], dtype=np.float32)
-SEC1 = np.array([int(c[2]) for c in F.COMBOS], dtype=np.float32)
-THI1 = np.array([int(c[4]) for c in F.COMBOS], dtype=np.float32)
+FIRST1 = np.array([int(c[0]) for c in F.COMBOS], dtype=np.float64)
+SEC1 = np.array([int(c[2]) for c in F.COMBOS], dtype=np.float64)
+THI1 = np.array([int(c[4]) for c in F.COMBOS], dtype=np.float64)
 NAMES = ["date", "race", "jcd", "rno", "combo", "first", "second", "third",
          "odds", "q", "p", "hit", "rmin", "band", "wave", "wind", "day_no",
          "is_final", "p1_first", "q1_first", "p_base", "p_g", "ok", "n_days"]
@@ -69,15 +69,17 @@ for rno_, (d, lanes, mt, od, q, q1, hit) in enumerate(races):
     if len(i) == 0:
         continue
     n = len(i)
-    one = lambda v: np.full(n, v, dtype=np.float32)
+    # ★float32 で持つと 8桁の日付が丸められる（20260131 → 20260132）。
+    #   日付で期間を切るので、ここは float64 でなければならない。
+    one = lambda v: np.full(n, v, dtype=np.float64)
     chunks.append(np.stack([
-        one(d), one(rno_), one(mt["jcd"]), one(mt["rno"]), i.astype(np.float32),
+        one(d), one(rno_), one(mt["jcd"]), one(mt["rno"]), i.astype(np.float64),
         FIRST1[i], SEC1[i], THI1[i], od[i], q[i], p[i], hitv[i], one(rmin),
         band[i], one(mt["wave"] if mt["wave"] is not None else -1),
         one(mt["wind"] if mt["wind"] is not None else -1),
         one(mt["day_no"] or -1), one(mt["is_final"]),
         p1[FIRST1[i].astype(int) - 1], q1[FIRST1[i].astype(int) - 1],
-        pb[i], pg[i], one(ok), one(mt["n_days"] or -1)], axis=1).astype(np.float32))
+        pb[i], pg[i], one(ok), one(mt["n_days"] or -1)], axis=1))
     if (rno_ + 1) % 10000 == 0:
         print(f"  {rno_+1}/{len(races)}", flush=True)
 
