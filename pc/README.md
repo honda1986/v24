@@ -171,13 +171,23 @@ C:\boat\venv\Scripts\python runner.py yosou --no-push      push しない
 23:50 の集計通知。「今日 yosou が1回も動いていない」を検知できるので、
 **夜の最後の砦**です。
 
-### ★ yosou / motor / prefetch の schedule を消す
+### yosou / motor / prefetch の schedule（2026-09-20 に消しました）
 
-**まだ消していません。** PC の運用を始める日に、同じ push で消してください
-（両方が定期で動く日を作らないため）。`workflow_dispatch:` は残します
-＝スマホから手動で動かせる予備運転になります。
+3つとも `on:` から `schedule:` を消し、`workflow_dispatch:` だけ残しました。
+＝定期では動かず、スマホから手動で動かせる予備運転になります。
 
-消すのは各 `.yml` の `on:` にある `schedule:` の塊だけです。
+★**効くのは main に入ってからです。** GitHub の定期実行は
+**既定のブランチ（main）の .yml だけ**を見ます。作業ブランチで消しても、
+main に古い `schedule:` が残っている限り GitHub は動き続けます。
+watchdog も同じで、main に入るまで鳴りません。
+
+**つまり「main への取り込み」が切り替えの瞬間です。** PC のタスクを
+登録して動くことを確かめてから取り込んでください。逆にすると、
+どちらも動かない時間ができます。
+
+戻したくなったら、各 `.yml` の `on:` に `schedule:` を書き戻して main に入れ、
+**同時に PC のタスクを無効にします**（`Disable-ScheduledTask -TaskName boat_yosou` など）。
+両方が定期で動く日を作らないこと。
 
 ---
 
@@ -201,7 +211,7 @@ C:\boat\venv\Scripts\python runner.py yosou --no-push      push しない
 |---|---|---|
 | 0 | 上の準備。`python selftest.py` と `python select_rule.py` | 両方「すべて通りました」 |
 | 1 | 3日間の並走。GitHub はそのまま、PC は `--dry` で3分おき | 同じレースに同じ組が出る |
-| 2 | schedule を消す push と PC タスクの有効化を**同じ日の早朝**に | その日のうちに通知とサイト更新 |
+| 2 | PC タスクを有効にし、動いたのを見てから main に取り込む | その日のうちに通知とサイト更新 |
 | 3 | 昼に yosou タスクを1時間止める | watchdog の警告が1〜2時間以内 |
 | 4 | PC を止めてスマホから Run workflow → 戻す | 二重通知が出ない |
 | 5 | 昼間に PC を再起動 | ログオンしなくてもタスクが再開する |

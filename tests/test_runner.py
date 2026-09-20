@@ -5,6 +5,7 @@
 本物の git を使って、リモート役の空リポジトリと手元のクローンを作り、
 仕様 §8 の項目をそのまま試す。
 """
+import io
 import json
 import os
 import shutil
@@ -348,6 +349,47 @@ class TestTaskArgs(unittest.TestCase):
               {"date": "20260920", "values": {"1": 1}})
         with self.assertRaises(RuntimeError):
             t.motor()
+
+
+class TestWorkflows(unittest.TestCase):
+    """PC に移した3つが GitHub でも定期で動いていないか
+
+    両方が定期で動く日を作ると、同じレースを二重に通知し、
+    自動投票が二重に買いに行く。消したものが戻っていないかを見張る。
+    """
+
+    def on_block(self, name):
+        """その .yml の on: の塊だけを取り出す（字下げが続く間）"""
+        path = os.path.join(V24, ".github", "workflows", name)
+        lines = io.open(path, encoding="utf-8").read().splitlines()
+        out, inside = [], False
+        for line in lines:
+            if line.startswith("on:"):
+                inside = True
+                continue
+            if inside:
+                if line and not line[0].isspace():
+                    break
+                if line.lstrip().startswith("#"):
+                    continue    # 注釈に書いた "schedule:" を拾わない
+                out.append(line)
+        self.assertTrue(inside, f"{name} に on: が無い")
+        return "\n".join(out)
+
+    def test_PCに移した3つは定期で動かない(self):
+        for name in ("yosou.yml", "motor.yml", "prefetch.yml"):
+            block = self.on_block(name)
+            self.assertNotIn(
+                "schedule:", block,
+                f"{name} に schedule: が戻っている。"
+                "PC と両方が定期で動くと二重通知・二重投票になる")
+            self.assertIn("workflow_dispatch:", block,
+                          f"{name} の手動起動が無い（予備運転ができない）")
+
+    def test_見張りと夜の集計は残っている(self):
+        for name in ("watchdog.yml", "daily.yml"):
+            self.assertIn("schedule:", self.on_block(name),
+                          f"{name} の定期実行が消えている")
 
 
 if __name__ == "__main__":

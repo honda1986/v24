@@ -9,12 +9,13 @@ name: yosou
 #
 #   公開リポジトリなので Actions の実行時間に上限は無い。
 on:
-  schedule:
-    - cron: "0 23 * * *"      # JST 08:00
-    - cron: "0 2 * * *"       # JST 11:00
-    - cron: "0 5 * * *"       # JST 14:00
-    - cron: "0 8 * * *"       # JST 17:00
-    - cron: "0 11 * * *"      # JST 20:00（ミッドナイトの後半）
+  # ★定期実行は PC のタスクスケジューラに移した（2026-09-20）。
+  #   ここに schedule: を戻さないこと。PC と GitHub の両方が定期で動くと、
+  #   同じレースを二重に通知し、自動投票が二重に買いに行く。
+  #   PC が止まったときの予備運転として、手動起動だけ残してある。
+  #   スマホから Actions → yosou → Run workflow で 3時間5分ぶん動く。
+  #   PC を戻すときは、このジョブが終わっている（または Cancel した）ことを
+  #   先に確かめること。手順は pc/README.md の §5。
   workflow_dispatch:
 
 permissions:
