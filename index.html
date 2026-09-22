@@ -12,81 +12,148 @@
   --bg:#0B1113; --card:#111A1D; --card2:#0F1719; --line:#26363B;
   --ink:#EAF2EF; --sub:#8CA3A0; --dim:#5E7573;
   --accent:#F2C230; --good:#5FC08B; --bad:#E4726B; --blue:#5AA9E6;
+  --ana:#8FB2FF;
   --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
   --sans:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
      font-size:14px;line-height:1.65;padding-bottom:48px}
-header{padding:16px 14px 12px;border-bottom:1px solid var(--line);
-       background:#0D1518;position:sticky;top:0;z-index:10}
+.wrap{max-width:720px;margin:0 auto}
+.note{font-size:11px;color:var(--sub);margin:0}
+a{color:var(--blue)}
+footer{text-align:center;font-size:10px;color:var(--dim);padding:14px}
+
+/* ---------- ヘッダーとタブ ---------- */
+header{background:#0D1518;border-bottom:1px solid var(--line);
+       position:sticky;top:0;z-index:30}
+.hrow{display:flex;align-items:center;gap:10px;padding:10px 12px 0}
 .brand{font-family:var(--mono);font-size:10px;letter-spacing:.22em;
        color:var(--accent);font-weight:800}
-h1{font-size:20px;margin:2px 0 4px;font-weight:900;letter-spacing:-.01em}
-.lead{font-size:11px;color:var(--sub);margin:0}
-.wrap{max-width:640px;margin:0 auto}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;
-      margin:12px 10px;padding:14px}
-h2{font-size:13px;margin:0 0 10px;color:var(--accent);font-weight:900;
-   letter-spacing:.08em}
-.note{font-size:11px;color:var(--sub);margin:0}
+.lead{font-family:var(--mono);font-size:10px;color:var(--dim);margin:0 0 0 auto;
+      text-align:right;line-height:1.35}
+.tabs{display:flex;gap:2px;padding:8px 12px 0}
+.tabs button{flex:1;background:none;border:none;border-bottom:2px solid transparent;
+      color:var(--dim);font-family:var(--sans);font-size:13px;font-weight:700;
+      padding:7px 4px 8px;cursor:pointer}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
 
-/* 成績サマリー */
-.kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
-.kpi div{background:var(--card2);border:1px solid var(--line);border-radius:9px;
-         padding:9px 8px;text-align:center}
-.kpi .lab{font-size:9.5px;color:var(--dim);letter-spacing:.06em;display:block}
-.kpi .val{font-family:var(--mono);font-size:19px;font-weight:800;
-          font-variant-numeric:tabular-nums;display:block;line-height:1.25}
-.kpi .val.big{font-size:23px}
-.u{font-size:11px;color:var(--sub);font-weight:400}
+/* ---------- 日の切り替え ---------- */
+.daybar{display:flex;align-items:center;gap:8px;padding:9px 12px;
+        background:#0D1518;border-bottom:1px solid var(--line);
+        position:sticky;top:var(--hh,96px);z-index:20}
+.daybar button{width:34px;height:34px;flex:0 0 34px;border-radius:9px;
+      border:1px solid var(--line);background:var(--card2);color:var(--ink);
+      font-size:14px;cursor:pointer;line-height:1}
+.daybar button:disabled{opacity:.3;cursor:default}
+.daybar select{flex:1;min-width:0;background:var(--card2);color:var(--ink);
+      border:1px solid var(--line);border-radius:9px;padding:7px 9px;
+      font-family:var(--mono);font-size:13px;font-weight:700;
+      -webkit-appearance:none;appearance:none;text-align:center;cursor:pointer}
 
-/* 96% を基準にした帯 */
-.gauge{position:relative;height:26px;border:1px solid var(--line);border-radius:7px;
-       background:var(--card2);overflow:hidden}
-.gauge .fill{position:absolute;inset:0 auto 0 0;background:rgba(95,192,139,.22)}
-.gauge .mark{position:absolute;top:0;bottom:0;width:1px;background:var(--accent)}
-.gauge .mark::after{content:attr(data-l);position:absolute;top:1px;left:3px;
-       font-family:var(--mono);font-size:9px;color:var(--accent);white-space:nowrap}
-.gauge .cur{position:absolute;top:0;bottom:0;width:2px;background:var(--ink);
-       transform:translateX(-1px)}
-.scale{display:flex;justify-content:space-between;font-family:var(--mono);
-       font-size:9px;color:var(--dim);margin-top:3px}
+/* ---------- その日の要約 ---------- */
+.dstat{display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px 0}
+.st{font-family:var(--mono);font-size:11px;font-variant-numeric:tabular-nums;
+    border:1px solid var(--line);border-radius:7px;padding:3px 9px;color:var(--sub);
+    background:var(--card2)}
+.st b{color:var(--ink);font-weight:800;margin-left:5px}
+.st.good b{color:var(--good)} .st.bad b{color:var(--bad)}
+.st.acc b{color:var(--accent)}
 
-/* レース */
-.race{border:1px solid var(--line);border-radius:10px;padding:10px 12px;
-      margin-bottom:8px;background:var(--card2)}
-.race.hit{border-color:var(--good);background:rgba(95,192,139,.07)}
-.race.miss{border-color:rgba(228,114,107,.4)}
-.rhead{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
-.place{font-weight:900;font-size:15px}
-.rno{font-family:var(--mono);font-size:12px;color:var(--sub)}
-.tag{font-family:var(--mono);font-size:9.5px;padding:2px 6px;border-radius:5px;
-     border:1px solid var(--line);color:var(--sub);letter-spacing:.04em}
-.tag.hit{border-color:var(--good);color:var(--good)}
-.tag.miss{border-color:var(--bad);color:var(--bad)}
-.tag.wait{border-color:var(--blue);color:var(--blue)}
-.buys{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+/* ---------- 場×レース番号のマップ ---------- */
+.map{margin:12px 10px;background:var(--card);border:1px solid var(--line);
+     border-radius:12px;padding:10px 10px 8px;overflow-x:auto}
+table.grid{border-collapse:separate;border-spacing:3px;font-family:var(--mono)}
+table.grid th{font-size:9px;color:var(--dim);font-weight:600;padding:0 2px}
+table.grid th.v{text-align:right;white-space:nowrap;font-family:var(--sans);
+      font-size:10.5px;color:var(--sub);padding-right:5px}
+.cell{width:23px;height:22px;border-radius:5px;border:1px solid var(--line);
+      background:#0A1113;color:var(--dim);font-size:10px;font-weight:700;
+      line-height:20px;text-align:center;cursor:pointer;padding:0;
+      font-family:var(--mono);display:block}
+.cell[disabled]{visibility:hidden}
+.cell.none{color:var(--sub)}
+.cell.cut{background:#0A1113;color:#3E4F52;border-color:#1B282B}
+.cell.wait{border-style:dashed;color:var(--dim)}
+.cell.nodata{border-style:dotted;color:#4E6265;border-color:#223134}
+.cell.err{border-color:rgba(228,114,107,.45);color:var(--bad)}
+.cell.buy{background:rgba(242,194,48,.18);border-color:var(--accent);color:var(--accent)}
+.cell.ana{background:rgba(143,178,255,.14);border-color:var(--ana);color:var(--ana)}
+.cell.hit{background:rgba(95,192,139,.24);border-color:var(--good);color:var(--good);
+      box-shadow:0 0 0 1px var(--good)}
+.cell.cur{outline:2px solid var(--ink);outline-offset:1px}
+.legend{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:8px;
+        font-size:10px;color:var(--dim)}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;
+        border:1px solid var(--line);margin-right:4px;vertical-align:-1px}
+.legend .g-buy i{background:rgba(242,194,48,.18);border-color:var(--accent)}
+.legend .g-hit i{background:rgba(95,192,139,.24);border-color:var(--good)}
+.legend .g-ana i{background:rgba(143,178,255,.14);border-color:var(--ana)}
+.legend .g-cut i{background:#0A1113;border-color:#1B282B}
+.legend .g-wait i{border-style:dashed}
+.legend .g-nodata i{border-style:dotted}
+
+/* ---------- 絞り込み ---------- */
+.tools{display:flex;gap:7px;padding:2px 12px 0;align-items:center}
+.tools input{flex:1;min-width:0;background:var(--card2);color:var(--ink);
+      border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:13px;
+      font-family:var(--sans)}
+.tools input::placeholder{color:var(--dim)}
+.tools .clr{border:1px solid var(--line);background:var(--card2);color:var(--sub);
+      border-radius:9px;width:34px;height:34px;cursor:pointer;font-size:14px}
+.chips{display:flex;gap:5px;padding:8px 12px 2px;overflow-x:auto;
+       scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;font-size:11.5px;border:1px solid var(--line);border-radius:99px;
+      padding:4px 11px;color:var(--sub);background:var(--card2);cursor:pointer;
+      white-space:nowrap;font-family:var(--sans)}
+.chip[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);
+      background:rgba(242,194,48,.10)}
+.chip b{font-family:var(--mono);margin-left:5px;font-weight:600;opacity:.8}
+
+/* ---------- レースの行 ---------- */
+#list{padding:8px 10px 0}
+.rc{border:1px solid var(--line);border-radius:10px;background:var(--card2);
+    margin-bottom:6px;scroll-margin-top:200px}
+.rc[open]{background:var(--card);border-color:#32464C}
+.rc.buy{border-left:2px solid var(--accent)}
+.rc.anar{border-left:2px solid var(--ana)}
+.rc.hit{border-color:var(--good);background:rgba(95,192,139,.06)}
+.rc>summary{list-style:none;cursor:pointer;padding:9px 11px;display:flex;
+      align-items:center;gap:8px;user-select:none}
+.rc>summary::-webkit-details-marker{display:none}
+.rc>summary:focus-visible{outline:1px solid var(--blue);outline-offset:-1px}
+.tm{font-family:var(--mono);font-size:11px;color:var(--dim);flex:0 0 38px}
+.pl{font-weight:800;font-size:14px}
+.rn{font-family:var(--mono);font-size:11px;color:var(--sub)}
+.badge{font-family:var(--mono);font-size:9.5px;padding:1px 6px;border-radius:5px;
+      border:1px solid var(--line);color:var(--sub);white-space:nowrap}
+.badge.buy{border-color:var(--accent);color:var(--accent)}
+.badge.ana{border-color:var(--ana);color:var(--ana)}
+.badge.hit{border-color:var(--good);color:var(--good)}
+.badge.miss{border-color:rgba(228,114,107,.5);color:var(--bad)}
+.badge.wait{border-color:rgba(90,169,230,.5);color:var(--blue)}
+.badge.cut,.badge.nodata{border-color:#24363A;color:#4E6265}
+.ww{font-family:var(--mono);font-size:10px;color:var(--dim);margin-left:auto;
+    white-space:nowrap}
+.dot{flex:0 0 6px;width:6px;height:6px;border-radius:50%;background:#2A3A3E}
+.dot.on{background:var(--blue)}
+.body{padding:0 11px 11px}
+
+/* 買い目 */
+.buys{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 9px}
 .buy{font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums;
      border:1px solid var(--line);border-radius:6px;padding:3px 7px;background:#0C1416}
 .buy.won{border-color:var(--good);background:rgba(95,192,139,.14);color:var(--good)}
+.buy.anab{border-color:rgba(143,178,255,.45)}
 .buy .pq{color:var(--accent);font-size:10px;margin-left:5px}
-/* 締切前オッズ → 確定オッズ の動き */
 .buy .mv{font-size:10px;margin-left:5px}
-.buy .mv.up{color:var(--good)}
-.buy .mv.dn{color:var(--bad)}
-.meta{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:7px;
+.buy .mv.up{color:var(--good)} .buy .mv.dn{color:var(--bad)}
+.meta{font-family:var(--mono);font-size:10px;color:var(--dim);margin:0 0 9px;
       display:flex;gap:10px;flex-wrap:wrap}
 
 /* 6艇の内訳 */
-details.det{margin-top:8px}
-details.det>summary{font-size:11px;color:var(--blue);cursor:pointer;
-      list-style:none;padding:3px 0;user-select:none}
-details.det>summary::-webkit-details-marker{display:none}
-details.det>summary::before{content:"▸ ";font-size:9px}
-details.det[open]>summary::before{content:"▾ "}
-details.det>summary:focus-visible{outline:1px solid var(--blue);outline-offset:2px}
-.tw{overflow-x:auto;margin-top:6px}
+.tw{overflow-x:auto}
 table.lanes{border-collapse:collapse;font-family:var(--mono);font-size:11px;
       font-variant-numeric:tabular-nums;white-space:nowrap;min-width:100%}
 table.lanes th{font-size:9px;color:var(--dim);font-weight:600;text-align:right;
@@ -95,18 +162,26 @@ table.lanes th:nth-child(-n+2){text-align:left}
 table.lanes td{padding:4px 6px;border-bottom:1px solid rgba(38,54,59,.5)}
 table.lanes td:nth-child(n+3){text-align:right}
 table.lanes tr:last-child td{border-bottom:none}
-/* 枠の色は実際のボートレースの艇色に合わせる。1白 2黒 3赤 4青 5黄 6緑 */
 .ln{display:inline-block;width:17px;height:17px;line-height:17px;text-align:center;
       border-radius:4px;font-weight:800;font-size:10px;color:#0B1113}
 .ln1{background:#FFFFFF;color:#0B1113}
-/* ★黒は暗い背景に埋もれるので、縁を1px入れて枠の存在を残す */
 .ln2{background:#141414;color:#FFFFFF;box-shadow:inset 0 0 0 1px #6C7A78}
 .ln3{background:#E23B32;color:#FFFFFF}
 .ln4{background:#2172D6;color:#FFFFFF}
 .ln5{background:#F5C518;color:#0B1113}
 .ln6{background:#17A05B;color:#FFFFFF}
+.nm{font-family:var(--sans);font-size:11px;color:var(--ink)}
+.pq-up{color:var(--good)}.pq-dn{color:var(--dim)}
+.fw{color:var(--accent)}
+.hl{background:rgba(242,194,48,.22);border-radius:3px}
+
 /* 3連単 出やすい順 */
-.tops{margin-top:6px}
+details.det{margin-top:9px}
+details.det>summary{font-size:11px;color:var(--blue);cursor:pointer;
+      list-style:none;padding:3px 0;user-select:none}
+details.det>summary::-webkit-details-marker{display:none}
+details.det>summary::before{content:"▸ ";font-size:9px}
+details.det[open]>summary::before{content:"▾ "}
 .trow{display:flex;align-items:center;gap:6px;padding:4px 2px;
       border-bottom:1px solid rgba(38,54,59,.45)}
 .trow:last-child{border-bottom:none}
@@ -118,138 +193,166 @@ table.lanes tr:last-child td{border-bottom:none}
     font-size:12px;color:var(--ink)}
 .to{font-family:var(--mono);font-size:10px;color:var(--dim);
     font-variant-numeric:tabular-nums;width:54px;text-align:right}
-.nm{font-family:var(--sans);font-size:11px;color:var(--ink)}
-.pq-up{color:var(--good)}.pq-dn{color:var(--dim)}
-.fw{color:var(--accent)}
 
-/* 全レース */
-.allraces{margin-top:10px}
-.allraces>summary{font-size:11px;color:var(--blue);cursor:pointer;list-style:none;
-      padding:4px 0;user-select:none}
-.allraces>summary::-webkit-details-marker{display:none}
-.allraces>summary::before{content:"▸ ";font-size:9px}
-.allraces[open]>summary::before{content:"▾ "}
-.rrow{border:1px solid var(--line);border-radius:8px;padding:7px 10px;
-      margin-bottom:5px;background:#0C1416}
-.rrow.buy{border-color:rgba(242,194,48,.45)}
-.rtop{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
-.rtop .st{font-family:var(--mono);font-size:9.5px;padding:1px 6px;border-radius:5px;
-      border:1px solid var(--line);color:var(--sub)}
-.rtop .st.buy{border-color:var(--accent);color:var(--accent)}
-.rtop .st.none{border-color:var(--line);color:var(--dim)}
-.rtop .st.cut{border-color:rgba(90,169,230,.4);color:var(--blue)}
-.rtop .st.err{border-color:rgba(228,114,107,.4);color:var(--bad)}
-.rtop .w{font-family:var(--mono);font-size:10px;color:var(--dim);margin-left:auto}
-
-/* 見送りの内訳 */
-.skips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-.skip{font-size:10px;color:var(--sub);border:1px solid var(--line);
-      border-radius:5px;padding:2px 7px}
-.skip b{font-family:var(--mono);color:var(--ink);font-weight:600;margin-left:4px}
-
-.day{margin-bottom:16px}
-.dhead{display:flex;justify-content:space-between;align-items:baseline;
-       border-bottom:1px solid var(--line);padding-bottom:5px;margin-bottom:9px}
-.dhead h3{font-family:var(--mono);font-size:12px;margin:0;font-weight:800;
-          letter-spacing:.04em}
-.dsum{font-family:var(--mono);font-size:11px;color:var(--sub);
-      font-variant-numeric:tabular-nums}
-.empty{color:var(--dim);font-size:12px;padding:6px 0}
+/* ---------- 成績ビュー ---------- */
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;
+      margin:12px 10px;padding:14px}
+h2{font-size:13px;margin:0 0 10px;color:var(--accent);font-weight:900;
+   letter-spacing:.08em}
+.kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));
+     gap:7px;margin-bottom:12px}
+.kpi div{background:var(--card2);border:1px solid var(--line);border-radius:9px;
+         padding:9px 5px;text-align:center}
+.kpi .lab{font-size:9px;color:var(--dim);letter-spacing:.04em;display:block}
+.kpi .val{font-family:var(--mono);font-size:17px;font-weight:800;
+          font-variant-numeric:tabular-nums;display:block;line-height:1.25;
+          white-space:nowrap}
+.kpi .val.big{font-size:21px}
+.u{font-size:11px;color:var(--sub);font-weight:400}
+.gauge{position:relative;height:26px;border:1px solid var(--line);border-radius:7px;
+       background:var(--card2);overflow:hidden}
+.gauge .fill{position:absolute;inset:0 auto 0 0;background:rgba(95,192,139,.22)}
+.gauge .mark{position:absolute;top:0;bottom:0;width:1px;background:var(--accent)}
+.gauge .mark::after{content:attr(data-l);position:absolute;top:1px;left:3px;
+       font-family:var(--mono);font-size:9px;color:var(--accent);white-space:nowrap}
+.gauge .cur{position:absolute;top:0;bottom:0;width:2px;background:var(--ink);
+       transform:translateX(-1px)}
+.scale{display:flex;justify-content:space-between;font-family:var(--mono);
+       font-size:9px;color:var(--dim);margin-top:3px}
 .warn{border-color:rgba(242,194,48,.35);background:rgba(242,194,48,.05)}
-/* 穴側(試験)。帯の買い目と見分けがつくようにする */
-#anacard{border-color:rgba(120,160,255,.30)}
-.buy.ana{border-color:rgba(120,160,255,.45)}
-.race.ana{border-left:2px solid rgba(120,160,255,.55)}
-.tagana{font-size:9px;color:#8FB2FF;border:1px solid rgba(120,160,255,.45);
-        border-radius:3px;padding:0 4px;margin-left:6px;line-height:14px}
-.rtop .st.ana{border-color:#8FB2FF;color:#8FB2FF}
-.warn h2{color:var(--accent)}
 .warn p{margin:0 0 6px;font-size:12px;color:var(--sub)}
 .warn p:last-child{margin-bottom:0}
 .warn b{color:var(--ink)}
-footer{text-align:center;font-size:10px;color:var(--dim);padding:8px 14px}
-a{color:var(--blue)}
-@media (prefers-reduced-motion:no-preference){
-  .race{transition:border-color .2s}
+#anacard{border-color:rgba(143,178,255,.30)}
+.empty{color:var(--dim);font-size:12px;padding:14px 12px;text-align:center}
+
+/* 日ごとの一覧（成績タブ） */
+.dlist{display:flex;flex-direction:column;gap:3px}
+.drow{display:flex;align-items:center;gap:9px;background:var(--card2);
+      border:1px solid var(--line);border-radius:8px;padding:7px 10px;
+      font-family:var(--mono);font-size:11.5px;cursor:pointer;color:var(--sub);
+      font-variant-numeric:tabular-nums;text-align:left;width:100%}
+.drow:hover{border-color:#3A5057}
+.drow .dd{color:var(--ink);font-weight:700;flex:0 0 78px}
+.drow .dr{margin-left:auto}
+.drow .dr.good{color:var(--good)} .drow .dr.bad{color:var(--bad)}
+.spark{flex:1;display:flex;gap:1px;align-items:flex-end;height:15px;min-width:40px}
+.spark i{flex:1;background:#24343A;border-radius:1px;min-height:2px}
+.spark i.b{background:var(--accent)} .spark i.h{background:var(--good)}
+
+/* 見送りの内訳 */
+.skips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 12px 0}
+.skip{font-size:10px;color:var(--sub);border:1px solid var(--line);
+      border-radius:5px;padding:2px 7px}
+.skip b{font-family:var(--mono);color:var(--ink);font-weight:600;margin-left:4px}
+.kbd{font-family:var(--mono);font-size:9.5px;color:var(--dim);
+     padding:10px 12px 0;text-align:center}
+.kbd b{color:var(--sub);border:1px solid var(--line);border-radius:4px;
+       padding:0 4px;font-weight:600}
+@media (max-width:420px){
+  .kbd{display:none}
 }
 </style>
 </head>
 <body>
 <header>
   <div class="wrap">
-    <div class="brand">BOATRACE V24</div>
-    <h1>予想ログ</h1>
-    <p class="lead" id="lead">読み込み中…</p>
+    <div class="hrow">
+      <div class="brand">BOATRACE V24</div>
+      <p class="lead" id="lead">読み込み中…</p>
+    </div>
+    <div class="tabs" role="tablist">
+      <button id="tab-day" role="tab" aria-selected="true" aria-controls="view-day">日別</button>
+      <button id="tab-sum" role="tab" aria-selected="false" aria-controls="view-sum">通算成績</button>
+    </div>
   </div>
 </header>
 
-<div class="wrap">
-
-<section class="card" id="sum">
-  <h2>成績</h2>
-  <div class="kpi">
-    <div><span class="lab">回収率</span><span class="val big" id="k-roi">—</span></div>
-    <div><span class="lab">的中</span><span class="val" id="k-hit">—</span></div>
-    <div><span class="lab">買った点</span><span class="val" id="k-pts">—</span></div>
-    <div><span class="lab">収支</span><span class="val" id="k-pl">—</span></div>
-    <div><span class="lab">オッズ目減り</span><span class="val" id="k-mv">—</span></div>
+<div class="daybar" id="daybar">
+  <div class="wrap" style="display:flex;align-items:center;gap:8px;width:100%">
+    <button id="prev" title="前の日 (←)">◀</button>
+    <select id="daysel" aria-label="日を選ぶ"></select>
+    <button id="next" title="次の日 (→)">▶</button>
   </div>
-  <div class="gauge" id="gauge">
-    <div class="fill" id="g-fill"></div>
-    <div class="mark" id="g-mark" data-l="検証値 96%"></div>
-    <div class="cur" id="g-cur"></div>
-  </div>
-  <div class="scale"><span>75%</span><span>100%</span><span>125%</span></div>
-  <p class="note" id="sum-note" style="margin-top:9px"></p>
-</section>
-
-<section class="card" id="anacard" style="display:none">
-  <h2>穴側（試験運用）</h2>
-  <div class="kpi">
-    <div><span class="lab">回収率</span><span class="val big" id="a-roi">—</span></div>
-    <div><span class="lab">的中</span><span class="val" id="a-hit">—</span></div>
-    <div><span class="lab">買った点</span><span class="val" id="a-pts">—</span></div>
-    <div><span class="lab">収支</span><span class="val" id="a-pl">—</span></div>
-    <div><span class="lab">オッズ目減り</span><span class="val" id="a-mv">—</span></div>
-  </div>
-  <p class="note" id="a-note" style="margin-top:9px"></p>
-</section>
-
-<section class="card warn">
-  <h2>読むときの前提</h2>
-  <p>バックテストの回収率は <b>95.3%</b>（学習に使っていない4,562組）。<b>100%は超えていません。</b></p>
-  <p>しかもこれは<b>確定オッズ</b>で測った値です。実際は通知から投票までにオッズが動くので、ここより下がります。</p>
-  <p>その差が上の<b>「オッズ目減り」</b>です。通知したときのオッズを1として、締切後の確定オッズが平均どれだけ動いたか。マイナスなら、その分だけ 95.3% から引いて読んでください。</p>
-  <p><b>2週間は買わずに記録だけ</b>取ってください。</p>
-</section>
-
-<section class="card">
-  <h2>買った記録</h2>
-  <div id="days"><p class="empty">まだ記録がありません。</p></div>
-</section>
-
-<footer>
-  <span id="foot"></span>
-</footer>
 </div>
 
+<div class="wrap">
+
+<section id="view-day" role="tabpanel" aria-labelledby="tab-day">
+  <div class="dstat" id="dstat"></div>
+  <div class="map" id="map"></div>
+  <div class="tools">
+    <input id="q" type="search" placeholder="場・レース番号・選手名でしぼる" autocomplete="off">
+    <button class="clr" id="qclr" title="消す">✕</button>
+  </div>
+  <div class="chips" id="chips"></div>
+  <div id="list"></div>
+  <div class="skips" id="skips"></div>
+  <p class="kbd">
+    <b>←</b> <b>→</b> 日を移動　<b>/</b> しぼりこみ　<b>Esc</b> 解除
+  </p>
+</section>
+
+<section id="view-sum" role="tabpanel" aria-labelledby="tab-sum" hidden>
+  <section class="card" id="sum">
+    <h2>帯（本線・実弾）</h2>
+    <div class="kpi">
+      <div><span class="lab">回収率</span><span class="val big" id="k-roi">—</span></div>
+      <div><span class="lab">的中</span><span class="val" id="k-hit">—</span></div>
+      <div><span class="lab">買った点</span><span class="val" id="k-pts">—</span></div>
+      <div><span class="lab">収支</span><span class="val" id="k-pl">—</span></div>
+      <div><span class="lab">オッズ目減り</span><span class="val" id="k-mv">—</span></div>
+    </div>
+    <div class="gauge" id="gauge">
+      <div class="fill" id="g-fill"></div>
+      <div class="mark" id="g-mark" data-l="検証値 96%"></div>
+      <div class="cur" id="g-cur"></div>
+    </div>
+    <div class="scale"><span>75%</span><span>100%</span><span>125%</span></div>
+    <p class="note" id="sum-note" style="margin-top:9px"></p>
+  </section>
+
+  <section class="card" id="anacard" style="display:none">
+    <h2>穴側（試験・シャドー）</h2>
+    <div class="kpi">
+      <div><span class="lab">回収率</span><span class="val big" id="a-roi">—</span></div>
+      <div><span class="lab">的中</span><span class="val" id="a-hit">—</span></div>
+      <div><span class="lab">買った点</span><span class="val" id="a-pts">—</span></div>
+      <div><span class="lab">収支</span><span class="val" id="a-pl">—</span></div>
+      <div><span class="lab">オッズ目減り</span><span class="val" id="a-mv">—</span></div>
+    </div>
+    <p class="note" id="a-note" style="margin-top:9px"></p>
+  </section>
+
+  <section class="card">
+    <h2>日ごと</h2>
+    <div class="dlist" id="dlist"></div>
+    <p class="note" style="margin-top:9px">押すとその日の一覧へ移ります。棒は1レース＝1本で、黄＝買った / 緑＝的中。</p>
+  </section>
+
+  <section class="card warn">
+    <h2>読むときの前提</h2>
+    <p>バックテストの回収率は <b>95.3%</b>（学習に使っていない4,562組）。<b>100%は超えていません。</b></p>
+    <p>しかもこれは<b>確定オッズ</b>で測った値です。実際は通知から投票までにオッズが動くので、ここより下がります。</p>
+    <p>その差が上の<b>「オッズ目減り」</b>です。通知したときのオッズを1として、締切後の確定オッズが平均どれだけ動いたか。マイナスなら、その分だけ 95.3% から引いて読んでください。</p>
+    <p>前向きに測り直すと帯は <b>100〜101%</b>（<code>band_howto.md</code> §16）。トントンの水準です。</p>
+  </section>
+</section>
+
+<footer><span id="foot"></span></footer>
+</div>
 <script>
-// 見送りの理由は yosou.py が付ける。増えても落とさないよう、
-// 決めた順を先に出し、知らないキーはそのあとに続ける。
-// ★「波・風」は 2026-09-20 に帯の足切りから外したので、以後は出ない
-//   （古い日の記録に残っているので並び順には残す）
-const SKIP_ORDER = ["淡水","波・風","帯の外／p/q不足","補正モデルが読めない",
-                    "データ欠"];
-// ★穴側のしきい値を 1.097 → 1.15 に変えた日。これ「以前」の記録は別ルールの
-//   成績なので、混ぜて回収率を出さない（ana_howto.md §8 の事前登録）。
-//   ★切り替え日そのものも含めない。その日の早い時間帯は旧ルール（1.097）で
-//     動いていて、通知して買った記録がすでに入っているため。
-//   ★2026-09-21 に窓を 4〜30分 → 4〜15分 に狭めたので、拾う母集団が変わった。
-//     事前登録を取り直し、この日より後だけを数える。
+// ★穴側のしきい値を 1.097 → 1.15 に変え、窓を 4〜15分に狭めた日。
+//   これ「以前」の記録は別ルールの成績なので混ぜない（ana_howto.md §9）。
 const ANA_AFTER = "20260921";
+const SKIP_ORDER = ["淡水","波・風","帯の外／p/q不足","補正モデルが読めない","データ欠"];
+const WD = ["日","月","火","水","木","金","土"];
+
 const yen = n => (n<0?"−":"") + "¥" + Math.abs(Math.round(n)).toLocaleString("ja-JP");
 const pct = n => (n*100).toFixed(1) + "%";
 const fmtDate = d => `${d.slice(0,4)}/${d.slice(4,6)}/${d.slice(6,8)}`;
+const num = (v,d,suf) => (v===null||v===undefined) ? "—" : Number(v).toFixed(d)+(suf||"");
+const wdOf = d => WD[new Date(+d.slice(0,4), +d.slice(4,6)-1, +d.slice(6,8)).getDay()];
 
 function el(tag, cls, txt){
   const e = document.createElement(tag);
@@ -257,22 +360,412 @@ function el(tag, cls, txt){
   if(txt !== undefined) e.textContent = txt;
   return e;
 }
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v===null?d:v; }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, v); }catch(e){} }
+};
 
-function render(data){
-  const days = (data.days || []).slice().sort((a,b)=> b.date.localeCompare(a.date));
+// ===================== 状態の分類 =====================
+// races[].status は生の文字列。表示と絞り込みはこの5種類に畳む。
+//   buy 買った / ana 穴側のみ / none 買い目が出なかった（＝内訳を見たい本命）
+//   cut 波・風で切った（オッズを取っていないので内訳が無い）
+//   wait 展示がまだ / err 気象やモーターが取れない
+function kindOf(r){
+  if(r.pick) return "buy";
+  if(r.anap) return "ana";
+  const s = r.status || "";
+  if(s === "買い") return "buy";
+  if(s === "穴のみ") return "ana";
+  if(s === "買い目なし") return "none";
+  if(s === "波・風") return "cut";
+  if(s.indexOf("展示") >= 0) return "wait";
+  // ★気象やモーター純度が取れないのは異常ではなく、よくある見送り。
+  //   赤くすると毎日「壊れている」ように見えるので分けておく
+  if(s.indexOf("気象") >= 0 || s.indexOf("モーター") >= 0) return "nodata";
+  return "err";
+}
+const KIND_LABEL = {buy:"買い", ana:"穴", none:"買い目なし", cut:"波・風で見送り",
+                    wait:"展示待ち", nodata:"気象・モーター欠", err:"読めず"};
+
+// 1日ぶんのレースを1本にまとめる。races が土台で、picks / ana を重ねる。
+// 同じレースが「買った記録」と「見た全レース」に二重に出ていたのをやめる。
+function racesOf(d){
+  const map = new Map();
+  const key = r => `${r.jcd}-${r.rno}`;
+  for(const r of (d.races || [])) map.set(key(r), {...r});
+  for(const p of (d.picks || [])){
+    const k = key(p), b = map.get(k) || {jcd:p.jcd, place:p.place, rno:p.rno,
+                                        close:p.close, status:"買い"};
+    map.set(k, {...b, ...p, pick:p});     // pick のほうが情報が多いので優先
+  }
+  for(const p of (d.ana || [])){
+    const k = key(p), b = map.get(k) || {jcd:p.jcd, place:p.place, rno:p.rno,
+                                         close:p.close, status:"穴のみ"};
+    // 帯も買っているレースなら、帯の情報は残したまま穴側を足す
+    map.set(k, {...b, anap:p, top:b.top || p.top, lanes:b.lanes || p.lanes,
+                close:b.close || p.close, wave:b.wave!=null?b.wave:p.wave,
+                wind:b.wind!=null?b.wind:p.wind});
+  }
+  const out = [...map.values()];
+  for(const r of out){ r.kind = kindOf(r); r.key = key(r); }
+  out.sort((a,b) => (a.close||"99:99").localeCompare(b.close||"99:99")
+                 || a.jcd - b.jcd || a.rno - b.rno);
+  return out;
+}
+
+// ===================== 画面の状態 =====================
+let DATA = null, DAYS = [], cur = 0, RACES = [];
+let filter = store.get("v24.filter", "all");
+let query = "";
+
+// ===================== 1レースぶんの表示 =====================
+function buysOf(p, isAna, hitCombo){
+  const bs = el("div","buys");
+  for(const b of (p.buys || [])){
+    const won = hitCombo && b.combo === hitCombo;
+    const e = el("span", "buy" + (isAna ? " anab" : "") + (won ? " won" : ""));
+    e.appendChild(document.createTextNode(b.combo));
+    e.appendChild(el("span","pq",
+      (isAna ? `${b.odds}倍 ` : "") + `p/q ${Number(b.pq).toFixed(2)}`));
+    if(b.move){
+      const d = (b.move - 1) * 100;
+      e.appendChild(el("span", "mv " + (d >= 0 ? "up" : "dn"),
+        (isAna ? "→" : `${b.odds}→`) + `${b.fodds} (${d>=0?"+":""}${d.toFixed(0)}%)`));
+    }
+    bs.appendChild(e);
+  }
+  return bs;
+}
+
+function metaOf(r, p, isAna){
+  const m = el("div","meta");
+  if(r.wave !== undefined && r.wave !== null)
+    m.appendChild(el("span", null, `波 ${r.wave}cm  風 ${r.wind}m`));
+  if(p){
+    m.appendChild(el("span", null, `${(p.buys||[]).length}点 ${yen(p.cost||0)}`));
+    if(p.left != null) m.appendChild(el("span", null, `締切${p.left}分前に判定`));
+    if(!isAna && p.kept != null)
+      m.appendChild(el("span", null,
+        `確定オッズでも条件を満たした ${p.kept}/${(p.buys||[]).length}点`));
+    if(p.combo) m.appendChild(el("span", null, `結果 ${p.combo}  払戻 ${yen(p.pay||0)}`));
+  }
+  const nm = r.nmot != null ? r.nmot : (p && p.nmot);
+  if(nm != null && nm < 3) m.appendChild(el("span", null, `モーター純度 ${nm}/6艇（節初日）`));
+  return m;
+}
+
+function laneTable(r){
+  const wrap = el("div","tw");
+  const t = el("table","lanes");
+  const head = el("tr");
+  for(const h of ["枠","選手","モデル","市場","p/q","級","全国","モ2連",
+                  "展示","平均ST","得点","モ純度"]) head.appendChild(el("th", null, h));
+  t.appendChild(head);
+  for(const x of r.lanes){
+    const tr = el("tr");
+    const c1 = el("td"); c1.appendChild(el("span","ln ln"+x.lane, String(x.lane)));
+    tr.appendChild(c1);
+    const c2 = el("td");
+    const nm = el("span","nm", x.name || "—");
+    if(query && x.name && x.name.replace(/\s/g,"").indexOf(query.replace(/\s/g,"")) >= 0)
+      nm.className = "nm hl";
+    c2.appendChild(nm);
+    if(x.f) c2.appendChild(el("span","fw", ` F${x.f}`));
+    tr.appendChild(c2);
+    tr.appendChild(el("td", null, x.p == null ? "—" : (x.p*100).toFixed(1)+"%"));
+    tr.appendChild(el("td", null, x.q == null ? "—" : (x.q*100).toFixed(1)+"%"));
+    const ratio = (x.p != null && x.q) ? x.p / x.q : null;
+    tr.appendChild(el("td", ratio == null ? null : (ratio >= 1 ? "pq-up" : "pq-dn"),
+                     ratio == null ? "—" : ratio.toFixed(2)));
+    tr.appendChild(el("td", null, ({4:"A1",3:"A2",2:"B1",1:"B2"})[x.cls] || "—"));
+    tr.appendChild(el("td", null, num(x.n_win, 2)));
+    tr.appendChild(el("td", null, x.m_2ren == null ? "—" : (x.m_2ren*100).toFixed(0)+"%"));
+    tr.appendChild(el("td", null, num(x.tenji, 2)));
+    tr.appendChild(el("td", null, num(x.st, 2)));
+    tr.appendChild(el("td", null, num(x.tok, 1)));
+    tr.appendChild(el("td", null, x.mot == null ? "—"
+      : (x.mot > 0 ? "+" : "") + Number(x.mot).toFixed(3)));
+    t.appendChild(tr);
+  }
+  wrap.appendChild(t);
+  return wrap;
+}
+
+function topList(r, open){
+  const d = el("details","det");
+  if(open) d.setAttribute("open","");
+  d.appendChild(el("summary", null, `3連単 出やすい順 ${r.top.length}点`));
+  const bought = new Set([].concat(
+    ((r.pick && r.pick.buys) || []).map(b => b.combo),
+    ((r.anap && r.anap.buys) || []).map(b => b.combo)));
+  const hitCombo = (r.pick && r.pick.combo) || (r.anap && r.anap.combo);
+  for(const t of r.top){
+    const combo = t[0], pr = t[1], od = t[2], pq = t[3];
+    const row = el("div", "trow" + (hitCombo === combo ? " won" : ""));
+    const cb = el("div","tcmb");
+    for(const n of combo.split("-")) cb.appendChild(el("span","ln ln"+n, n));
+    row.appendChild(cb);
+    if(bought.has(combo)) row.appendChild(el("span","tbuy","買"));
+    row.appendChild(el("span","tp", (pr*100).toFixed(1)+"%"));
+    row.appendChild(el("span","to", od == null ? "—" : od.toFixed(1)+"倍"));
+    if(pq != null) row.appendChild(el("span","to", "p/q "+pq.toFixed(2)));
+    d.appendChild(row);
+  }
+  const note = el("p","note", "モデルが見た出やすさの順。買うのはこのうち"
+    + "「オッズの帯に入っていて、市場より高く見ている組」だけです。");
+  note.style.marginTop = "6px";
+  d.appendChild(note);
+  return d;
+}
+
+function raceRow(r){
+  const p = r.pick, a = r.anap;
+  const hit = (p && p.hit === true) || (a && a.hit === true);
+  const cls = "rc " + r.kind + (r.kind === "ana" ? "r" : "") + (hit ? " hit" : "");
+  const det = el("details", cls.replace("anar", "anar"));
+  det.id = "r-" + r.key;
+
+  const s = el("summary");
+  s.appendChild(el("span","tm", r.close || "—"));
+  s.appendChild(el("span","pl", r.place || r.jcd));
+  s.appendChild(el("span","rn", `${r.rno}R`));
+  if(p) s.appendChild(el("span","badge buy", `買 ${(p.buys||[]).length}点`));
+  if(a) s.appendChild(el("span","badge ana", `穴 ${(a.buys||[]).length}点`));
+  if(!p && !a) s.appendChild(el("span",
+      "badge " + (r.kind === "cut" || r.kind === "nodata" ? r.kind : ""),
+      KIND_LABEL[r.kind]));
+  for(const x of [p, a]){
+    if(!x) continue;
+    if(x.hit === true) s.appendChild(el("span","badge hit", `的中 ${yen(x.ret)}`));
+    else if(x.hit === false) s.appendChild(el("span","badge miss","不的中"));
+    else s.appendChild(el("span","badge wait","結果待ち"));
+  }
+  const w = el("span","ww");
+  w.textContent = (r.wave != null ? `波${r.wave} 風${r.wind}` : "");
+  s.appendChild(w);
+  const dot = el("span", "dot" + (r.lanes && r.lanes.length ? " on" : ""));
+  dot.title = r.lanes && r.lanes.length ? "6艇の内訳あり" : "内訳なし";
+  s.appendChild(dot);
+  det.appendChild(s);
+
+  const body = el("div","body");
+  if(p){ body.appendChild(buysOf(p, false, p.combo)); body.appendChild(metaOf(r, p, false)); }
+  if(a){
+    const lab = el("div","meta"); lab.appendChild(el("span","badge ana","穴側（記録のみ）"));
+    body.appendChild(lab);
+    body.appendChild(buysOf(a, true, a.combo));
+    body.appendChild(metaOf(r, a, true));
+  }
+  if(!p && !a) body.appendChild(metaOf(r, null, false));
+
+  // ★買い目が無いレースこそ内訳を見たい。開いたら table がすぐ出る
+  if(r.lanes && r.lanes.length) body.appendChild(laneTable(r));
+  else body.appendChild(el("p","note",
+    r.kind === "cut" ? "波・風で切ったレースはオッズを取っていないので内訳がありません。"
+    : r.kind === "nodata" ? "気象かモーター純度が取れず、モデルを回していません。"
+    : r.kind === "wait" ? "展示タイムがまだ出ていない時点で見たレースです。"
+    : "このレースは内訳が残っていません。"));
+  if(r.top && r.top.length) body.appendChild(topList(r, !!(p || a)));
+  det.appendChild(body);
+  return det;
+}
+
+// ===================== 場×レース番号のマップ =====================
+function buildMap(races){
+  const box = document.getElementById("map");
+  box.textContent = "";
+  if(!races.length){ box.style.display = "none"; return; }
+  box.style.display = "";
+  const venues = [];
+  const byV = new Map();
+  for(const r of races){
+    const v = r.place || String(r.jcd);
+    if(!byV.has(v)){ byV.set(v, new Map()); venues.push(v); }
+    byV.get(v).set(r.rno, r);
+  }
+  const maxR = Math.max(12, ...races.map(r => r.rno || 0));
+  const t = el("table","grid");
+  const head = el("tr");
+  head.appendChild(el("th","v",""));
+  for(let i=1;i<=maxR;i++) head.appendChild(el("th", null, String(i)));
+  t.appendChild(head);
+  for(const v of venues){
+    const tr = el("tr");
+    tr.appendChild(el("th","v", v));
+    for(let i=1;i<=maxR;i++){
+      const td = el("td");
+      const r = byV.get(v).get(i);
+      const b = el("button","cell");
+      if(!r){ b.disabled = true; }
+      else{
+        const hit = (r.pick && r.pick.hit === true) || (r.anap && r.anap.hit === true);
+        b.className = "cell " + (hit ? "hit" : r.kind);
+        b.textContent = String(i);
+        b.title = `${v}${i}R ${r.close||""} ${KIND_LABEL[r.kind]}`
+                + (hit ? " 的中" : "") + (r.lanes && r.lanes.length ? " / 内訳あり" : "");
+        b.onclick = () => jumpTo(r.key);
+      }
+      td.appendChild(b);
+      tr.appendChild(td);
+    }
+    t.appendChild(tr);
+  }
+  box.appendChild(t);
+  const lg = el("div","legend");
+  const seen = new Set(races.map(r => r.kind));
+  for(const [c,l] of [["buy","買い"],["hit","的中"],["ana","穴側"],
+                      ["none","買い目なし"],["cut","波・風"],["wait","展示待ち"],
+                      ["nodata","気象・モーター欠"]]){
+    if(c !== "hit" && !seen.has(c)) continue;
+    const s = el("span", "g-" + c); s.appendChild(el("i")); 
+    s.appendChild(document.createTextNode(l));
+    lg.appendChild(s);
+  }
+  box.appendChild(lg);
+}
+
+function jumpTo(key){
+  // 絞り込みで隠れていたら外してから開く
+  const r = RACES.find(x => x.key === key);
+  if(r && !visible(r)){ filter = "all"; query = "";
+    document.getElementById("q").value = ""; drawList(); }
+  const node = document.getElementById("r-" + key);
+  if(!node) return;
+  node.open = true;
+  node.scrollIntoView({behavior:"smooth", block:"center"});
+  for(const c of document.querySelectorAll(".cell.cur")) c.classList.remove("cur");
+  location.hash = `d=${DAYS[cur].date}&r=${key}`;
+}
+
+// ===================== 絞り込み =====================
+function visible(r){
+  if(filter !== "all"){
+    if(filter === "detail"){ if(!(r.lanes && r.lanes.length)) return false; }
+    else if(filter === "hit"){
+      if(!((r.pick && r.pick.hit === true) || (r.anap && r.anap.hit === true))) return false;
+    }
+    else if(r.kind !== filter) return false;
+  }
+  if(!query) return true;
+  const q = query.replace(/\s/g,"").toLowerCase();
+  const hay = [r.place, String(r.jcd), r.rno + "R", String(r.rno), r.close,
+               KIND_LABEL[r.kind],
+               ...((r.lanes||[]).map(x => x.name || "")),
+               ...(((r.pick&&r.pick.buys)||[]).map(b => b.combo)),
+               ...(((r.anap&&r.anap.buys)||[]).map(b => b.combo))]
+              .join("|").replace(/\s/g,"").toLowerCase();
+  return hay.indexOf(q) >= 0;
+}
+
+function drawChips(){
+  const box = document.getElementById("chips");
+  box.textContent = "";
+  const counts = {all:RACES.length, buy:0, ana:0, none:0, cut:0, wait:0,
+                  nodata:0, err:0, detail:0, hit:0};
+  for(const r of RACES){
+    counts[r.kind] = (counts[r.kind]||0) + 1;
+    if(r.lanes && r.lanes.length) counts.detail++;
+    if((r.pick && r.pick.hit === true) || (r.anap && r.anap.hit === true)) counts.hit++;
+  }
+  const defs = [["all","すべて"],["buy","買い"],["hit","的中"],["ana","穴側"],
+                ["none","買い目なし"],["detail","内訳あり"],["cut","波・風"],
+                ["wait","展示待ち"],["nodata","気象・モーター欠"],["err","読めず"]];
+  for(const [k, label] of defs){
+    if(k !== "all" && !counts[k]) continue;
+    const b = el("button","chip", label);
+    b.setAttribute("aria-pressed", filter === k ? "true" : "false");
+    b.appendChild(el("b", null, String(counts[k])));
+    b.onclick = () => { filter = k; store.set("v24.filter", k); drawChips(); drawList(); };
+    box.appendChild(b);
+  }
+}
+
+function drawList(){
+  const box = document.getElementById("list");
+  box.textContent = "";
+  const shown = RACES.filter(visible);
+  if(!shown.length){
+    box.appendChild(el("p","empty",
+      RACES.length ? "この条件に合うレースはありません。" : "この日は記録がありません。"));
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  for(const r of shown) frag.appendChild(raceRow(r));
+  box.appendChild(frag);
+}
+
+// ===================== 1日を描く =====================
+function drawDay(){
+  const d = DAYS[cur];
+  RACES = racesOf(d);
+
+  const dp = d.picks || [], da = d.ana || [];
+  const ds = dp.filter(p => p.hit === true || p.hit === false);
+  const cost = ds.reduce((s,p)=>s+(p.cost||0),0);
+  const ret  = ds.reduce((s,p)=>s+(p.ret||0),0);
+  const pts  = dp.reduce((s,p)=>s+((p.buys||[]).length),0);
+  const hits = ds.filter(p=>p.hit).length;
+
+  const st = document.getElementById("dstat");
+  st.textContent = "";
+  const add = (lab, val, cls) => {
+    const s = el("span", "st" + (cls ? " "+cls : ""), lab);
+    s.appendChild(el("b", null, val)); st.appendChild(s);
+  };
+  add("見たレース", String(RACES.length));
+  add("買い", `${dp.length}R ${pts}点`, "acc");
+  if(ds.length){
+    add("的中", `${hits}/${ds.length}`);
+    add("回収", pct(ret/cost), ret >= cost ? "good" : "bad");
+    add("収支", yen(ret-cost), ret >= cost ? "good" : "bad");
+  }else if(dp.length){ add("結果", "待ち"); }
+  if(da.length) add("穴側", `${da.length}R`);
+
+  buildMap(RACES);
+  drawChips();
+  drawList();
+
+  const sk = document.getElementById("skips");
+  sk.textContent = "";
+  if(d.skipped && Object.keys(d.skipped).length){
+    const total = Object.values(d.skipped).reduce((a,b)=>a+b,0);
+    sk.appendChild(el("span","skip", `組の見送り ${total}`));
+    const keys = SKIP_ORDER.filter(k => d.skipped[k])
+      .concat(Object.keys(d.skipped).filter(k => !SKIP_ORDER.includes(k) && d.skipped[k]));
+    for(const k of keys){
+      const s = el("span","skip", k);
+      s.appendChild(el("b", null, String(d.skipped[k])));
+      sk.appendChild(s);
+    }
+  }
+
+  document.getElementById("daysel").value = String(cur);
+  document.getElementById("prev").disabled = cur >= DAYS.length - 1;
+  document.getElementById("next").disabled = cur <= 0;
+  if(!location.hash.startsWith("#d=" + d.date)) location.hash = "d=" + d.date;
+}
+
+function goDay(i, key){
+  cur = Math.max(0, Math.min(DAYS.length - 1, i));
+  drawDay();
+  if(key) jumpTo(key);
+  else window.scrollTo({top:0});
+}
+
+// ===================== 通算成績 =====================
+function drawSummary(data){
+  const days = DAYS;
   const picks = days.flatMap(d => (d.picks||[]).map(p => ({...p, date:d.date})));
   const settled = picks.filter(p => p.hit === true || p.hit === false);
-
   const cost = settled.reduce((s,p)=> s + (p.cost||0), 0);
   const ret  = settled.reduce((s,p)=> s + (p.ret||0), 0);
   const pts  = picks.reduce((s,p)=> s + (p.buys||[]).length, 0);
   const hits = settled.filter(p=>p.hit).length;
 
-  document.getElementById("lead").textContent =
-    days.length
-      ? `${fmtDate(days[days.length-1].date)} 〜 ${fmtDate(days[0].date)} ／ `
-        + `${days.length}日 ${picks.length}レース ${pts}点`
-      : "まだ記録がありません";
+  document.getElementById("lead").innerHTML = days.length
+    ? `${fmtDate(days[days.length-1].date)} 〜 ${fmtDate(days[0].date)}<br>`
+      + `${days.length}日 ${picks.length}レース ${pts}点`
+    : "まだ記録がありません";
 
   const roiEl = document.getElementById("k-roi");
   if(settled.length){
@@ -300,23 +793,17 @@ function render(data){
   pl.textContent = settled.length ? yen(ret - cost) : "—";
   pl.style.color = settled.length && ret >= cost ? "var(--good)" : "var(--bad)";
 
-  // 通知したときのオッズが、締切までにどれだけ動いたか。
-  // ★バックテスト95.3%は確定オッズで測った値。ここが実運用との差そのもの。
   const mvs = picks.flatMap(p => (p.buys||[]).map(b => b.move).filter(x => x));
   const mvEl = document.getElementById("k-mv");
   if(mvs.length){
-    const avg = mvs.reduce((a,b)=>a+b,0) / mvs.length;
-    const d = (avg - 1) * 100;
+    const d = (mvs.reduce((a,b)=>a+b,0) / mvs.length - 1) * 100;
     mvEl.innerHTML = (d>=0?"+":"") + d.toFixed(1) + '<span class="u">%</span>';
     mvEl.style.color = d >= 0 ? "var(--good)" : "var(--bad)";
     mvEl.title = `買った ${mvs.length}組の平均。締切前に見たオッズを1とした確定オッズ`;
-  }else{
-    mvEl.textContent = "—";
-  }
+  }else{ mvEl.textContent = "—"; }
 
   // --- 穴側(試験)。★帯とは別勘定。上の成績には1円も混ぜない ---
-  const anaAll = days.filter(d => (d.date || "") > ANA_AFTER)
-                     .flatMap(d => d.ana || []);
+  const anaAll = days.filter(d => (d.date || "") > ANA_AFTER).flatMap(d => d.ana || []);
   if(anaAll.length){
     document.getElementById("anacard").style.display = "";
     const ad = anaAll.filter(p => p.hit === true || p.hit === false);
@@ -328,9 +815,7 @@ function render(data){
     if(acost){
       roiEl2.textContent = pct(aret/acost);
       roiEl2.style.color = aret >= acost ? "var(--good)" : "var(--bad)";
-    }else{
-      roiEl2.textContent = "—";
-    }
+    }else{ roiEl2.textContent = "—"; }
     document.getElementById("a-hit").innerHTML = ad.length
       ? `${ahit}<span class="u">/${ad.length}</span>` : "—";
     document.getElementById("a-pts").textContent = apts || "—";
@@ -354,262 +839,124 @@ function render(data){
       + (ahit < 50 ? "　※的中50本を超えるまでは判定しません（ana_howto.md §8）。" : "");
   }
 
-  const box = document.getElementById("days");
-  box.textContent = "";
-  if(!days.length){
-    box.appendChild(el("p","empty","まだ記録がありません。"));
-  }
-  for(const d of days){
-    const sec = el("div","day");
-    const head = el("div","dhead");
-    head.appendChild(el("h3", null, fmtDate(d.date)));
-    const dp = (d.picks||[]);
-    const ds = dp.filter(p=>p.hit===true||p.hit===false);
-    const dcost = ds.reduce((s,p)=>s+(p.cost||0),0);
-    const dret  = ds.reduce((s,p)=>s+(p.ret||0),0);
-    const na = (d.ana||[]).length;
-    head.appendChild(el("span","dsum",
-      (ds.length ? `${dp.length}R  ${pct(dret/dcost)}  ${yen(dret-dcost)}`
-                 : `${dp.length}R  結果待ち`) + (na ? `　穴${na}R` : "")));
-    sec.appendChild(head);
-
-    if(!dp.length && !(d.ana||[]).length){
-      sec.appendChild(el("p","empty","この日は買い目が出ませんでした（正常です）。"));
+  // 日ごとの一覧。押すとその日へ飛ぶ
+  const dl = document.getElementById("dlist");
+  dl.textContent = "";
+  DAYS.forEach((d, i) => {
+    const rs = racesOf(d);
+    const dp = d.picks || [];
+    const ds = dp.filter(p => p.hit === true || p.hit === false);
+    const c = ds.reduce((s,p)=>s+(p.cost||0),0);
+    const r = ds.reduce((s,p)=>s+(p.ret||0),0);
+    const row = el("button","drow");
+    row.appendChild(el("span","dd", `${d.date.slice(4,6)}/${d.date.slice(6,8)} (${wdOf(d.date)})`));
+    const sp = el("div","spark");
+    for(const x of rs){
+      const b = el("i");
+      if((x.pick && x.pick.hit === true) || (x.anap && x.anap.hit === true)) b.className = "h";
+      else if(x.pick) b.className = "b";
+      b.style.height = ((x.pick || x.anap) ? 15 : 5) + "px";
+      sp.appendChild(b);
     }
-    for(const p of dp){
-      const cls = p.hit === true ? "race hit" : (p.hit === false ? "race miss" : "race");
-      const r = el("div", cls);
-      const h = el("div","rhead");
-      h.appendChild(el("span","place", p.place || p.jcd));
-      h.appendChild(el("span","rno", `${p.rno}R`));
-      h.appendChild(el("span","rno", `締切 ${p.close || "—"}`));
-      h.appendChild(el("span", "tag " + (p.hit===true?"hit":p.hit===false?"miss":"wait"),
-        p.hit===true ? `的中 ${yen(p.ret)}` : p.hit===false ? "不的中" : "結果待ち"));
-      r.appendChild(h);
-
-      const bs = el("div","buys");
-      for(const b of (p.buys||[])){
-        const won = p.combo && b.combo === p.combo;
-        const e = el("span","buy" + (won ? " won" : ""));
-        e.appendChild(document.createTextNode(b.combo));
-        const q = el("span","pq", `p/q ${Number(b.pq).toFixed(2)}`);
-        e.appendChild(q);
-        if(b.move){
-          const d = (b.move - 1) * 100;
-          const mv = el("span", "mv " + (d >= 0 ? "up" : "dn"),
-            `${b.odds}→${b.fodds} (${d>=0?"+":""}${d.toFixed(0)}%)`);
-          e.appendChild(mv);
-        }
-        bs.appendChild(e);
-      }
-      r.appendChild(bs);
-
-      const m = el("div","meta");
-      if(p.wave !== undefined && p.wave !== null)
-        m.appendChild(el("span", null, `波 ${p.wave}cm  風 ${p.wind}m`));
-      m.appendChild(el("span", null, `${(p.buys||[]).length}点 ${yen(p.cost||0)}`));
-      if(p.nmot !== undefined && p.nmot !== null && p.nmot < 3)
-        m.appendChild(el("span", null, `モーター純度 ${p.nmot}/6艇（節初日）`));
-      if(p.kept !== undefined && p.kept !== null)
-        m.appendChild(el("span", null,
-          `確定オッズでも条件を満たした ${p.kept}/${(p.buys||[]).length}点`));
-      if(p.combo) m.appendChild(el("span", null, `結果 ${p.combo}  払戻 ${yen(p.pay||0)}`));
-      r.appendChild(m);
-      if(p.top && p.top.length) r.appendChild(topList(p, true));
-      if(p.lanes && p.lanes.length) r.appendChild(laneTable(p));
-      sec.appendChild(r);
-    }
-
-    for(const p of (d.ana||[])){
-      const cls = p.hit === true ? "race ana hit" : (p.hit === false ? "race ana miss" : "race ana");
-      const r = el("div", cls);
-      const h = el("div","rhead");
-      h.appendChild(el("span","place", p.place || p.jcd));
-      h.appendChild(el("span","rno", `${p.rno}R`));
-      h.appendChild(el("span","tagana","穴側 試験"));
-      h.appendChild(el("span", "tag " + (p.hit===true?"hit":p.hit===false?"miss":"wait"),
-        p.hit===true ? `的中 ${yen(p.ret)}` : p.hit===false ? "不的中" : "結果待ち"));
-      r.appendChild(h);
-      const bs = el("div","buys");
-      for(const b of (p.buys||[])){
-        const won = p.combo && b.combo === p.combo;
-        const e = el("span","buy ana" + (won ? " won" : ""));
-        e.appendChild(document.createTextNode(b.combo));
-        e.appendChild(el("span","pq", `${b.odds}倍 p/q ${Number(b.pq).toFixed(2)}`));
-        if(b.move){
-          const dd = (b.move - 1) * 100;
-          e.appendChild(el("span", "mv " + (dd >= 0 ? "up" : "dn"),
-            `→${b.fodds} (${dd>=0?"+":""}${dd.toFixed(0)}%)`));
-        }
-        bs.appendChild(e);
-      }
-      r.appendChild(bs);
-      const m = el("div","meta");
-      if(p.wave !== undefined && p.wave !== null)
-        m.appendChild(el("span", null, `波 ${p.wave}cm  風 ${p.wind}m`));
-      m.appendChild(el("span", null, `${(p.buys||[]).length}点 ${yen(p.cost||0)}`));
-      if(p.combo) m.appendChild(el("span", null, `結果 ${p.combo}  払戻 ${yen(p.pay||0)}`));
-      r.appendChild(m);
-      if(p.top && p.top.length) r.appendChild(topList(p, false));
-      sec.appendChild(r);
-    }
-
-    if(d.races && d.races.length) sec.appendChild(allRaces(d));
-
-    if(d.skipped && Object.keys(d.skipped).length){
-      const sk = el("div","skips");
-      const total = Object.values(d.skipped).reduce((a,b)=>a+b,0);
-      sk.appendChild(el("span","skip", `見送り ${total}`));
-      const keys = SKIP_ORDER.filter(k => d.skipped[k])
-        .concat(Object.keys(d.skipped).filter(k => !SKIP_ORDER.includes(k) && d.skipped[k]));
-      for(const k of keys){
-        const s = el("span","skip", k);
-        s.appendChild(el("b", null, d.skipped[k]));
-        sk.appendChild(s);
-      }
-      sec.appendChild(sk);
-    }
-    box.appendChild(sec);
-  }
+    row.appendChild(sp);
+    row.appendChild(el("span", null, `${dp.length}R`));
+    const rr = el("span", "dr " + (ds.length ? (r>=c?"good":"bad") : ""),
+                  ds.length ? pct(r/c) : "—");
+    row.appendChild(rr);
+    row.onclick = () => { showTab("day"); goDay(i); };
+    dl.appendChild(row);
+  });
 
   document.getElementById("foot").textContent =
     "更新 " + (data.updated ? data.updated.replace("T"," ").slice(0,16) : "—");
 }
 
-const num = (v, d, suf) => (v === null || v === undefined)
-  ? "—" : Number(v).toFixed(d) + (suf || "");
-
-function laneTable(p){
-  const d = el("details","det");
-  d.appendChild(el("summary", null, "6艇の内訳"));
-  const wrap = el("div","tw");
-  const t = el("table","lanes");
-  const head = el("tr");
-  for(const h of ["枠","選手","モデル","市場","p/q","級","全国","モ2連",
-                  "展示","平均ST","得点","モ純度"]){
-    head.appendChild(el("th", null, h));
-  }
-  t.appendChild(head);
-  for(const x of p.lanes){
-    const tr = el("tr");
-    const c1 = el("td");
-    const b = el("span", "ln ln" + x.lane, String(x.lane));
-    c1.appendChild(b);
-    tr.appendChild(c1);
-    const c2 = el("td");
-    const nm = el("span","nm", x.name || "—");
-    c2.appendChild(nm);
-    if(x.f) {
-      const f = el("span","fw", ` F${x.f}`);
-      c2.appendChild(f);
-    }
-    tr.appendChild(c2);
-    // ★決め手になる3つを先に置く。右にはみ出すと見られない
-    tr.appendChild(el("td", null, x.p == null ? "—"
-      : (x.p * 100).toFixed(1) + "%"));
-    tr.appendChild(el("td", null, x.q == null ? "—"
-      : (x.q * 100).toFixed(1) + "%"));
-    const ratio = (x.p != null && x.q) ? x.p / x.q : null;
-    tr.appendChild(el("td", ratio == null ? null : (ratio >= 1 ? "pq-up" : "pq-dn"),
-                     ratio == null ? "—" : ratio.toFixed(2)));
-    tr.appendChild(el("td", null, ({4:"A1",3:"A2",2:"B1",1:"B2"})[x.cls] || "—"));
-    tr.appendChild(el("td", null, num(x.n_win, 2)));
-    tr.appendChild(el("td", null, x.m_2ren == null ? "—"
-      : (x.m_2ren * 100).toFixed(0) + "%"));
-    tr.appendChild(el("td", null, num(x.tenji, 2)));
-    tr.appendChild(el("td", null, num(x.st, 2)));
-    tr.appendChild(el("td", null, num(x.tok, 1)));
-    tr.appendChild(el("td", null, x.mot == null ? "—"
-      : (x.mot > 0 ? "+" : "") + Number(x.mot).toFixed(3)));
-    t.appendChild(tr);
-  }
-  wrap.appendChild(t);
-  d.appendChild(wrap);
-  const note = el("p","note");
-  note.style.marginTop = "6px";
-  note.textContent = "モデル＝1着確率の予想、市場＝オッズが織り込んだ1着確率。"
-    + "p/q が1より大きい艇を、市場より強いと見ています。";
-  d.appendChild(note);
-  return d;
+// ===================== タブ =====================
+function showTab(which){
+  const day = which === "day";
+  document.getElementById("view-day").hidden = !day;
+  document.getElementById("view-sum").hidden = day;
+  document.getElementById("daybar").style.display = day ? "" : "none";
+  document.getElementById("tab-day").setAttribute("aria-selected", day);
+  document.getElementById("tab-sum").setAttribute("aria-selected", !day);
+  store.set("v24.tab", which);
 }
 
-// 3連単を「出やすい順」に並べる。買い目とは別物で、
-// 買い目は q の帯と p/q で絞ったあとの残り、こちらはモデルの素の予想。
-function topList(r, open){
-  const d = el("details", "det tops");
-  if(open) d.setAttribute("open","");
-  d.appendChild(el("summary", null, `3連単 出やすい順 ${r.top.length}点`));
-  const bought = new Set((r.buys||[]).map(b => b.combo));
-  for(const t of r.top){
-    const combo = t[0], pr = t[1], od = t[2], pq = t[3];
-    const row = el("div", "trow" + (r.combo && r.combo === combo ? " won" : ""));
-    const cb = el("div","tcmb");
-    for(const n of combo.split("-")){
-      cb.appendChild(el("span", "ln ln" + n, n));
+// ===================== 起動 =====================
+function render(data){
+  DATA = data;
+  DAYS = (data.days || []).slice().sort((a,b)=> b.date.localeCompare(a.date));
+  if(!DAYS.length){
+    document.getElementById("lead").textContent = "まだ記録がありません";
+    document.getElementById("list").appendChild(el("p","empty","まだ記録がありません。"));
+    return;
+  }
+  const sel = document.getElementById("daysel");
+  sel.textContent = "";
+  DAYS.forEach((d, i) => {
+    const dp = (d.picks||[]).length;
+    const ds = (d.picks||[]).filter(p => p.hit === true || p.hit === false);
+    const c = ds.reduce((s,p)=>s+(p.cost||0),0), r = ds.reduce((s,p)=>s+(p.ret||0),0);
+    const o = el("option", null,
+      `${fmtDate(d.date)} (${wdOf(d.date)})` + (dp ? `　買${dp}R` : "　買0")
+      + (ds.length ? `　${pct(r/c)}` : ""));
+    o.value = String(i);
+    sel.appendChild(o);
+  });
+  sel.onchange = () => goDay(+sel.value);
+  document.getElementById("prev").onclick = () => goDay(cur + 1);
+  document.getElementById("next").onclick = () => goDay(cur - 1);
+
+  const q = document.getElementById("q");
+  let t = null;
+  q.oninput = () => { clearTimeout(t); t = setTimeout(() => {
+    query = q.value.trim(); drawList(); }, 120); };
+  document.getElementById("qclr").onclick = () => {
+    q.value = ""; query = ""; drawList(); q.focus(); };
+
+  document.getElementById("tab-day").onclick = () => showTab("day");
+  document.getElementById("tab-sum").onclick = () => showTab("sum");
+
+  document.addEventListener("keydown", e => {
+    if(e.target.tagName === "INPUT" || e.target.tagName === "SELECT"){
+      if(e.key === "Escape"){ e.target.blur(); }
+      return;
     }
-    row.appendChild(cb);
-    if(bought.has(combo)) row.appendChild(el("span","tbuy","買"));
-    row.appendChild(el("span","tp", (pr*100).toFixed(1) + "%"));
-    row.appendChild(el("span","to", od == null ? "—" : od.toFixed(1) + "倍"));
-    if(pq != null) row.appendChild(el("span","to", "p/q " + pq.toFixed(2)));
-    d.appendChild(row);
-  }
-  const note = el("p","note");
-  note.style.marginTop = "6px";
-  note.textContent = "モデルが見た出やすさの順。買うのはこのうち "
-    + "「オッズの帯に入っていて、市場より高く見ている組」だけなので、"
-    + "上位でも買っていない組があります。";
-  d.appendChild(note);
-  return d;
-}
+    if(e.key === "ArrowLeft"){ goDay(cur + 1); }
+    else if(e.key === "ArrowRight"){ goDay(cur - 1); }
+    else if(e.key === "/"){ e.preventDefault(); q.focus(); }
+    else if(e.key === "Escape"){ filter = "all"; query = ""; q.value = "";
+                                 drawChips(); drawList(); }
+  });
 
-// 見たレースを全部並べる。買い目が出なかったものも含む。
-// ★波・風で切ったレースはオッズを取っていないので内訳が無い。
-//   全レースでモデルを回すには全レースのオッズが要り、10分に収まらない。
-const ST_CLASS = {"買い":"buy", "穴のみ":"ana", "買い目なし":"none", "波・風":"cut"};
+  // ヘッダーの高さぶん、日の帯を下げる
+  const hh = document.querySelector("header").offsetHeight;
+  document.documentElement.style.setProperty("--hh", hh + "px");
 
-function allRaces(d){
-  const det = el("details","allraces");
-  const n = d.races.length;
-  const withDetail = d.races.filter(r => r.lanes && r.lanes.length).length;
-  det.appendChild(el("summary", null,
-    `この日に見た全${n}レース（うち内訳あり ${withDetail}）`));
-  for(const r of d.races){
-    const row = el("div","rrow" + (r.status === "買い" ? " buy" : ""));
-    const top = el("div","rtop");
-    top.appendChild(el("span","place", r.place || r.jcd));
-    top.appendChild(el("span","rno", `${r.rno}R`));
-    top.appendChild(el("span","rno", r.close || "—"));
-    top.appendChild(el("span", "st " + (ST_CLASS[r.status] || "err"),
-      r.status === "買い" ? `買い ${r.npt}点` : r.status));
-    if(r.wave !== null && r.wave !== undefined)
-      top.appendChild(el("span","w", `波${r.wave}cm 風${r.wind}m`));
-    row.appendChild(top);
-    if(r.top && r.top.length) row.appendChild(topList(r, false));
-    if(r.lanes && r.lanes.length) row.appendChild(laneTable(r));
-    row.appendChild(el("div"));
-    det.appendChild(row);
+  drawSummary(data);
+
+  // #d=20260922&r=17-7 の形で開けるようにする
+  const m = /d=(\d{8})(?:&r=([\d-]+))?/.exec(location.hash || "");
+  let i = 0, key = null;
+  if(m){
+    const j = DAYS.findIndex(d => d.date === m[1]);
+    if(j >= 0){ i = j; key = m[2] || null; }
   }
-  const note = el("p","note");
-  note.style.marginTop = "6px";
-  note.textContent = "波・風で切ったレースにはオッズを取っていないので内訳がありません"
-    + "（全レースぶん取ると10分の実行時間に収まらないため）。";
-  det.appendChild(note);
-  return det;
+  showTab(store.get("v24.tab", "day") === "sum" ? "sum" : "day");
+  goDay(i, key);
 }
 
 function fail(msg){
   document.getElementById("lead").textContent = msg;
-  document.getElementById("sum-note").textContent = "";
+  document.getElementById("list").appendChild(el("p","empty", msg));
 }
 
-if(window.__DATA__){
-  render(window.__DATA__);
-}else{
+if(window.__DATA__){ render(window.__DATA__); }
+else{
   fetch("history.json?" + Date.now())
     .then(r => r.ok ? r.json() : Promise.reject(r.status))
     .then(render)
-    .catch(e => fail("history.json を読めません（" + e + "）。まだ1件も通知が出ていないか、まだ commit されていません。"));
+    .catch(e => fail("history.json を読めません（" + e + "）。"));
 }
 </script>
 </body>
