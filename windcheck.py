@@ -1,79 +1,124 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""windcheck.py -- 直前情報の「水面気象情報」に風向（方角）が入っているか調べる
+"""windcheck.py -- 直前情報から風向（コンパスと風の矢印）を取り出す
 
 ★何のための確認か
-  Kファイルには風向（北・南西…）が入っているが、本番で使っている
-  beforeinfo.py は風速・気温・水温・波高しか取っていない。
-  スマホ版の画面にはコンパス（その場の水面がどちらを向いているか）と
-  風の矢印（水面基準の風向）が出ているので、それが HTML から取れるなら
-  「スタート位置から見て 追い風／向かい風／右／左」が本番でも分かる。
+  Kファイルには風向が **方位**（北・南西…）で入っているが、それをそのまま
+  使うには「その場の水面がどちらを向いているか」を24場ぶん手で書く必要が
+  あり、1場間違えただけで追い風と向かい風が入れ替わって静かに壊れる。
 
-  取れるかどうかを確かめるだけのスクリプト。何も変更しない。
+  直前情報のPC版には class として2つ入っている（2026-09-23 に確認）。
 
-  python windcheck.py                  # 既定の3場を見る
-  python windcheck.py --jcd 2 4 24     # 場を指定
-  python windcheck.py --date 20260922 --rno 1
-  python windcheck.py --save out.txt   # 貼り付け用に書き出す
+    weather1_bodyUnitImage is-direction<N>   コンパス（その場の向き）
+    weather1_bodyUnitImage is-wind<N>        風の矢印
 
-★ページが JavaScript で組み立てられている場合は、ここでは取れない。
-  そのときは「風向らしきものが見つからない」と出る。
+  知りたいのは **is-wind が方位なのか、水面基準なのか**。
+  水面基準なら、場ごとの向きの表を作らずに
+  「スタート位置から見て 追い風／向かい風／右／左」が直接読める。
+
+  判別のしかた:
+    ・同じ場で風向がいろいろ変わる日を取り、Kファイルの wind_dir と
+      is-wind の対応を見る
+    ・複数の場で is-direction が違えば、それが場の向き
+
+  python windcheck.py --date 20260921 --jcd 13 --rno 1-12
+  python windcheck.py --date 20260921 --jcd 1 5 6 9 10 12 13 15 16 17 18 --rno 1
+  python windcheck.py --classes --jcd 2          # class を並べるだけ（調査用）
+  ... --save C:\\boat\\wind.txt                   # 貼り付け用に書き出す
+
+★読むだけ。何も変更しない。
 """
 import argparse
 import io
 import re
 import sys
+import time
 
 import requests
 
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                     "(KHTML, like Gecko) Chrome/125.0 Safari/537.36"}
-PAGES = {
-    "pc": "https://www.boatrace.jp/owpc/pc/race/beforeinfo?hd={d}&jcd={j:02d}&rno={r}",
-    "sp": "https://www.boatrace.jp/owsp/sp/race/beforeinfo?hd={d}&jcd={j:02d}&rno={r}",
-}
-# 風向・方角が入っていそうなものを広めに拾う。当たりが分からないので絞らない
-HINT = re.compile(r"(wind|Wind|WIND|kaze|風向|方位|compass|Compass|direction|Direction"
-                  r"|arrow|Arrow|weather)", re.I)
+URL = "https://www.boatrace.jp/owpc/pc/race/beforeinfo?hd={d}&jcd={j:02d}&rno={r}"
 MARK = "水面気象"
+HINT = re.compile(r"(wind|direction|compass|arrow|weather)", re.I)
+
+RE_DIR = re.compile(r"weather1_bodyUnitImage\s+is-direction(\d+)")
+RE_WIND = re.compile(r"weather1_bodyUnitImage\s+is-wind(\d+)")
 
 
-def anchor(html):
-    """「水面気象情報」の前後だけを切り出す。無ければ全体"""
-    i = html.find(MARK)
+def fetch(date, jcd, rno):
+    try:
+        return requests.get(URL.format(d=date, j=jcd, r=rno), headers=UA,
+                            timeout=25).text
+    except requests.RequestException as e:
+        return f"★取れません: {type(e).__name__} {e}"
+
+
+def label(html, title):
+    """「風速 2m」のような値を1つ取る。無ければ None"""
+    i = html.find(title)
     if i < 0:
-        return html, False
-    return html[max(0, i - 4000): i + 8000], True
+        return None
+    m = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*(?:m|cm|℃)", html[i:i + 400])
+    return m.group(1) if m else None
 
 
-def look(html, out):
-    part, found = anchor(html)
-    out(f"  「{MARK}」の見出し: {'見つかった' if found else '★見つからない'}")
-    cls = sorted({c for c in re.findall(r'class="([^"]+)"', part) if HINT.search(c)})
-    out(f"  風向らしい class: {len(cls)}種")
-    for c in cls[:40]:
-        out(f"    {c}")
-    srcs = sorted({s for s in re.findall(r'(?:src|href)="([^"]+)"', part)
-                   if HINT.search(s)})
-    out(f"  風向らしい画像・リンク: {len(srcs)}種")
-    for s in srcs[:20]:
-        out(f"    {s}")
-    # 数字そのものが本文に出ているか。出ていなければ JavaScript で組み立てている
-    ms = len(re.findall(r"[0-9]+(?:\.[0-9]+)?m", part))
-    out(f"  本文に「風速」: {'ある' if '風速' in part else '★ない'} / 「m」の数値: {ms}個")
-    svg = part.count("<svg")
-    out(f"  <svg>: {svg}個 / <canvas>: {part.count('<canvas')}個")
-    return cls, srcs
+def rows(date, jcds, rnos, out, wait=0.5):
+    out("date\tjcd\trno\tdirection\twind\t風速\t波高")
+    n = 0
+    for j in jcds:
+        for r in rnos:
+            html = fetch(date, j, r)
+            if html.startswith("★"):
+                out(f"{date}\t{j:02d}\t{r}\t{html}")
+                continue
+            if MARK not in html:
+                out(f"{date}\t{j:02d}\t{r}\t-\t-\t-\t-\t（開催なし）")
+                continue
+            d = RE_DIR.search(html)
+            w = RE_WIND.search(html)
+            out(f"{date}\t{j:02d}\t{r}\t"
+                f"{d.group(1) if d else '?'}\t{w.group(1) if w else '?'}\t"
+                f"{label(html, '風速') or '-'}\t{label(html, '波高') or '-'}")
+            n += 1
+            time.sleep(wait)
+    out(f"\n取れたレース {n}件")
+
+
+def classes(date, jcds, rno, out):
+    for j in jcds:
+        html = fetch(date, j, rno)
+        out(f"\n===== 場{j:02d} {len(html):,}バイト")
+        if html.startswith("★"):
+            out("  " + html)
+            continue
+        i = html.find(MARK)
+        part = html if i < 0 else html[max(0, i - 4000): i + 8000]
+        out(f"  「{MARK}」: {'見つかった' if i >= 0 else '★見つからない（開催なし？）'}")
+        for c in sorted({c for c in re.findall(r'class="([^"]+)"', part)
+                         if HINT.search(c)}):
+            out(f"    {c}")
+
+
+def expand(vals):
+    """1 2 5 や 1-12 を展開する"""
+    out = []
+    for v in vals:
+        if "-" in str(v):
+            a, b = str(v).split("-", 1)
+            out += list(range(int(a), int(b) + 1))
+        else:
+            out.append(int(v))
+    return out
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--date", default="20260922")
-    ap.add_argument("--rno", type=int, default=1)
-    ap.add_argument("--jcd", type=int, nargs="+", default=[2, 4, 24])
+    ap.add_argument("--date", default="20260921")
+    ap.add_argument("--jcd", nargs="+", default=["13"])
+    ap.add_argument("--rno", nargs="+", default=["1-12"])
+    ap.add_argument("--classes", action="store_true", help="class を並べるだけ")
     ap.add_argument("--save", default="")
-    ap.add_argument("--html", default="",
-                    help="保存済みの HTML を見る（ネットに出ずに調べる）")
     args = ap.parse_args()
 
     buf = io.StringIO()
@@ -82,52 +127,17 @@ def main():
         print(s)
         buf.write(s + "\n")
 
-    if args.html:
-        out(f"===== 保存済み {args.html}")
-        with open(args.html, encoding="utf-8", errors="replace") as f:
-            html = f.read()
-        out(f"  {len(html):,}バイト")
-        look(html, out)
-        if args.save:
-            with open(args.save, "w", encoding="utf-8") as f:
-                f.write(buf.getvalue())
-            print(f"\n書き出しました: {args.save}")
-        return 0
-
-    per = {}
-    for j in args.jcd:
-        for kind, tmpl in PAGES.items():
-            url = tmpl.format(d=args.date, j=j, r=args.rno)
-            out(f"\n===== 場{j:02d} {kind} {url}")
-            try:
-                html = requests.get(url, headers=UA, timeout=25).text
-            except requests.RequestException as e:
-                out(f"  ★取れません: {type(e).__name__} {e}")
-                continue
-            out(f"  {len(html):,}バイト")
-            cls, _ = look(html, out)
-            per[(j, kind)] = set(cls)
-
-    # ★場ごとに class が違えば、その中に「その場の向き」が入っている
-    for kind in PAGES:
-        got = [(j, per[(j, kind)]) for j in args.jcd if (j, kind) in per]
-        if len(got) < 2:
-            continue
-        same = set.intersection(*[c for _, c in got])
-        out(f"\n----- {kind}: 場によって違う class")
-        any_diff = False
-        for j, c in got:
-            d = sorted(c - same)
-            if d:
-                any_diff = True
-                out(f"  場{j:02d} だけ: {d}")
-        if not any_diff:
-            out("  ★全場で同じ。場ごとの向きは class に入っていない")
+    jcds, rnos = expand(args.jcd), expand(args.rno)
+    if args.classes:
+        classes(args.date, jcds, rnos[0], out)
+    else:
+        rows(args.date, jcds, rnos, out)
 
     if args.save:
         with open(args.save, "w", encoding="utf-8") as f:
             f.write(buf.getvalue())
         print(f"\n書き出しました: {args.save}")
+    return 0
 
 
 if __name__ == "__main__":
