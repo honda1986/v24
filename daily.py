@@ -20,6 +20,11 @@ from datetime import datetime, timedelta, timezone
 
 JST = timezone(timedelta(hours=9))
 SITE = "history.json"
+MOTOR = "motor/latest.json"
+# ★結果（的中・払戻）とモーター純度は motor タスク（毎朝6:00）が入れる。
+#   Kファイルは翌朝に出るので、前日ぶんが未確定なのは正常。
+#   これより古いものが残っていたら、motor が動いていない。
+STALE_DAYS = 2
 # ★2026-09-20 に帯を「p/q>1.15 ＋ 波・風の足切りを廃止」に変えた
 #   （band_howto.md §13〜§14）。1.097＋足切りありのときの検証値は 1日6.6レース。
 #   新しい設定では
@@ -92,6 +97,24 @@ def main():
         d = (datetime.strptime(date, "%Y%m%d") - timedelta(days=i)).strftime("%Y%m%d")
         recent.append(len((days.get(d) or {}).get("picks") or []))
 
+    # ★結果が何日も入っていないことに気づけるようにする（2026-09-22 追加）。
+    #   定期実行を GitHub から PC に移したとき boat_motor の登録が漏れ、
+    #   settle が2日ぶん動かずに結果が入らなかった。誰も気づけなかった。
+    #   daily.py は GitHub 側で動くので、PC が丸ごと止まっても鳴る。
+    cut = (datetime.strptime(date, "%Y%m%d")
+           - timedelta(days=STALE_DAYS)).strftime("%Y%m%d")
+    stale = []
+    for d in sorted(days):
+        if d > cut:
+            continue
+        n = sum(1 for p in ((days[d].get("picks") or []) + (days[d].get("ana") or []))
+                if p.get("hit") is None)
+        if n:
+            stale.append((d, n))
+
+    # モーター純度も motor タスクが作る。古ければ同じ故障を指している
+    mdate = (load(MOTOR, {}) or {}).get("date") or ""
+
     ana = (day or {}).get("ana") or []
     lines = [f"買い目 {len(picks)}レース "
              f"{sum(len(p['buys']) for p in picks)}点"]
@@ -101,6 +124,8 @@ def main():
                      f"{sum(len(p.get('buys') or []) for p in ana)}点")
     lines += [f"見たレース {looked}（重複を除いた実数）",
               f"実行 {runs}回（最後 {last}）"]
+    if mdate:
+        lines.append(f"モーター純度 {mdate}")
     for k, v in sorted(by.items(), key=lambda z: -z[1]):
         # 「買い」「穴のみ」は見送りではないので内訳に出さない
         if k not in ("買い", "穴のみ"):
@@ -124,6 +149,15 @@ def main():
             and len(days) >= ZERO_DAYS):
         alarm.append(f"{ZERO_DAYS}日続けて買い目ゼロ。"
                      "ゼロの日自体は珍しくないが、この長さは想定外")
+
+    if stale:
+        n = sum(x for _, x in stale)
+        alarm.append(f"{len(stale)}日ぶん（{n}レース）の結果が入っていない"
+                     f"（{stale[0][0]}〜{stale[-1][0]}）。"
+                     "毎朝6:00の motor タスク（settle.py）が動いていない")
+    if mdate and mdate <= cut:
+        alarm.append(f"モーター純度が {mdate} のまま。"
+                     "motor タスクが動いていないか、v22 を取り込めていない")
 
     title = (f"v24 {date[4:6]}/{date[6:8]} 今日の集計"
              if not alarm else f"★v24 {date[4:6]}/{date[6:8]} 異常")
