@@ -637,13 +637,44 @@ def bet(page, b, yen, live, shot_dir=None, top_url=""):
     return TelebotePage(page, shot_dir=shot_dir, top_url=top_url).bet(b, yen, live)
 
 
+SLIP_TOTAL_RE = re.compile(r"合計ベット数([0-9]+)ベット")
+
+
+def slip_count_in_text(text, url=""):
+    """画面の文字から、ベットリストの件数を読む。読めなければ None
+
+    画面もネットも要らないので、テストから直接叩ける。
+
+    ★ヘッダーの赤いバッジは数字が文字として出てこない（2026-09-22 実機で確認。
+      inner_text にも locator にも「4」が現れなかった）。読めるのは
+      ベットリスト画面の「合計ベット数 N ベット」だけ。
+    ★ベットリスト画面なのに合計が無ければ、空（0件）。
+      それ以外の画面では None（＝分からない）を返すこと。0 と決めつけると、
+      入っているのに「空だ」と誤判定して、買い残りの上に積み増す。
+    """
+    m = SLIP_TOTAL_RE.search(tight(text or ""))
+    if m:
+        return int(m.group(1))
+    if "betlist" in (url or "").lower():
+        return 0
+    return None
+
+
 def slip_left(page):
     """ベットリストに残っている件数。読めなければ None
 
-    ★ヘッダーの赤いバッジは画像か CSS の飾りで、文字としては読めない。
-      読めたときだけ使い、読めなければ None（＝分からない）を返すこと。
-      件数が 0 だと決めつけると、入っているのに「入らなかった」と誤判定する。
+    ★2026-09-22: ヘッダーのバッジを読む作りだったが、実機では数字が
+      文字として取れず、いつも None を返していた。その None を
+      clear_slip が「空」と読んで何もせず True を返していたため、
+      失敗するたびに買い目が積み上がった（江戸川6R で4件）。
+      いまはベットリスト画面の「合計ベット数」を先に見る。
     """
+    try:
+        n = slip_count_in_text(page.inner_text("body"), getattr(page, "url", "") or "")
+    except Exception:
+        n = None
+    if n is not None:
+        return n
     sel = (SELECTORS.get("slip_badge") or "").strip()
     if not sel:
         return None
@@ -662,13 +693,15 @@ def slip_left(page):
 def clear_slip(page):
     """ベットリストを空にする
 
-    dry は投票を押さないので、試すたびに1件残る。残っていると、次に
-    追加しても確認画面に載らない（合計ベット数が空・合計金額0円になる）。
+    dry は投票を押さないので、試すたびに1件残る。live でも、ベットリストに
+    入れたあとで失敗すると同じように1件残る。残ったまま次の周でもう一度
+    追加すると「合計ベット数2ベット」になり、照合が通らず永久に買えない。
 
     消し方は推測なので、消せたかどうかは件数で確かめる。
     駄目なら False を返し、手で消してもらう。
     """
-    if not slip_left(page):
+    # ★None（分からない）を「空」と読んではいけない。分からないなら押しに行く
+    if slip_left(page) == 0:
         return True
     for name in ("slip_open", "slip_clear", "slip_clear_ok"):
         sel = (SELECTORS.get(name) or "").strip()
@@ -682,7 +715,9 @@ def clear_slip(page):
                 break
             except Exception:
                 continue
-    return not slip_left(page)
+    # ★ここでも None は「消せた」ではない。分からないものは False にして、
+    #   手で確かめてもらう
+    return slip_left(page) == 0
 
 
 def open_top(page, url):

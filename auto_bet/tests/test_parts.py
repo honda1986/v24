@@ -597,6 +597,94 @@ class TestIsRace(unittest.TestCase):
         self.assertTrue(self.is_race("https://bu.tbbr.jp/bet?jyoCode=17&raceNo=3"))
 
 
+class TestSlipCount(unittest.TestCase):
+    """ベットリストの件数。2026-09-22 に4件積み上がった原因はここ
+
+    ヘッダーの赤いバッジは数字が文字として取れない。実機のダンプ
+    （NG_20260922_江戸川6R_ベットリスト.txt）から写した文面で確かめる。
+    """
+
+    REAL = (
+        "トップ\nベットリスト\n投票ナビOFF\n入金\nベットリスト\n照会\nマイページ\n"
+        "投票はまだ完了していません。\n"
+        "1\t江戸川 6R 3連単\t5.2\t\n00円\n\n1-2-3\n出走選手\n"
+        "2\t江戸川 6R 3連単\t5.2\t\n00円\n\n1-2-3\n出走選手\n"
+        "3\t江戸川 6R 3連単\t5.2\t\n00円\n\n1-2-3\n出走選手\n"
+        "4\t江戸川 6R 3連単\t5.2\t\n00円\n\n1-2-3\n出走選手\n"
+        "合計ベット数\n4ベット\n合計金額\n2,000円\n次へ\n"
+    )
+    URL = "https://bu.tbbr.jp/betlist"
+
+    def test_実機の画面から件数を読める(self):
+        self.assertEqual(
+            telebote_page.slip_count_in_text(self.REAL, self.URL), 4)
+
+    def test_バッジの数字は文字として出てこない(self):
+        # ヘッダーだけでは読めない。だから None（分からない）でなければならない
+        head = "トップ\nベットリスト\n投票ナビOFF\n入金\nベットリスト\n照会\nマイページ"
+        self.assertIsNone(telebote_page.slip_count_in_text(head, "https://bu.tbbr.jp/top"))
+
+    def test_ベットリスト画面で合計が無ければ空(self):
+        self.assertEqual(
+            telebote_page.slip_count_in_text("ベットリストに登録がありません", self.URL), 0)
+
+    def test_1件なら1(self):
+        one = self.REAL.split("2\t江戸川")[0] + "合計ベット数\n1ベット\n合計金額\n500円\n"
+        self.assertEqual(telebote_page.slip_count_in_text(one, self.URL), 1)
+
+    def test_桁区切りがあっても件数は読める(self):
+        big = "合計ベット数\n12ベット\n合計金額\n6,000円"
+        self.assertEqual(telebote_page.slip_count_in_text(big, self.URL), 12)
+
+
+class TestClearSlip(unittest.TestCase):
+    """★件数が「分からない(None)」を「空」と読んではいけない
+
+    前はそう読んでいたので、clear_slip が何もせず True を返していた。
+    """
+
+    class FakePage:
+        def __init__(self, counts, url="https://bu.tbbr.jp/betlist"):
+            self.counts = list(counts)      # 画面が見せる件数を順に
+            self.clicked = []
+            self.url = url
+
+        def inner_text(self, sel):
+            n = self.counts.pop(0) if self.counts else 0
+            if n is None:
+                return "トップ ベットリスト"      # 読めない画面
+            return f"合計ベット数\n{n}ベット\n合計金額\n{n * 500}円"
+
+        def wait_for_selector(self, sel, timeout=0):
+            return True
+
+        def click(self, sel):
+            self.clicked.append(sel)
+            self.url = "https://bu.tbbr.jp/betlist"   # 押せばリスト画面へ行く
+
+        def wait_for_timeout(self, ms):
+            pass
+
+    def test_分からないときは押しに行く(self):
+        # トップにいると件数が読めない。読めないまま「空だ」と決めないこと
+        page = self.FakePage([None, 0], url="https://bu.tbbr.jp/top")
+        self.assertTrue(telebote_page.clear_slip(page))
+        self.assertTrue(page.clicked, "分からないのに何も押していない")
+
+    def test_消えていなければFalse(self):
+        page = self.FakePage([4, 4])
+        self.assertFalse(telebote_page.clear_slip(page))
+
+    def test_消えたらTrue(self):
+        page = self.FakePage([4, 0])
+        self.assertTrue(telebote_page.clear_slip(page))
+
+    def test_最初から空なら何も押さない(self):
+        page = self.FakePage([0])
+        self.assertTrue(telebote_page.clear_slip(page))
+        self.assertEqual(page.clicked, [])
+
+
 class TestConfirmVerify(unittest.TestCase):
     """確認画面の照合。ここが最後の砦
 
