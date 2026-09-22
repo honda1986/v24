@@ -597,6 +597,57 @@ class TestIsRace(unittest.TestCase):
         self.assertTrue(self.is_race("https://bu.tbbr.jp/bet?jyoCode=17&raceNo=3"))
 
 
+class TestSlipText(unittest.TestCase):
+    """★ベットリストを読むのが早すぎた件（2026-09-22）
+
+    追加した直後の1回目だけ、ヘッダーとメニューしか返らなかった。
+    それを「1件も入っていない」と読んで打ち切り、次の周が積み増した。
+    """
+
+    HEAD = ("トップ ベットリスト 投票ナビOFF 入金 ベットリスト 照会 マイページ "
+            "閉じる 本日の払戻金一覧 お知らせ ログアウト")
+    FULL = HEAD + ("\n投票はまだ完了していません。\n"
+                   "1 江戸川 6R 3連単 5.2 00円 1-2-3 出走選手\n"
+                   "合計ベット数\n1ベット\n合計金額\n500円\n次へ")
+
+    class Bet:
+        combo = "1-2-3"
+
+    class FakePage:
+        def __init__(self, texts):
+            self.texts = list(texts)
+            self.waited = 0
+
+        def inner_text(self, sel):
+            return self.texts.pop(0) if len(self.texts) > 1 else self.texts[0]
+
+        def wait_for_timeout(self, ms):
+            self.waited += ms
+
+    def read(self, texts, timeout_ms=1000):
+        page = self.FakePage(texts)
+        tp = telebote_page.TelebotePage(page)
+        return tp.slip_text(self.Bet(), timeout_ms=timeout_ms), page
+
+    def test_描けるまで待って読む(self):
+        text, page = self.read([self.HEAD, self.HEAD, self.FULL])
+        self.assertIn("合計ベット数", telebote_page.tight(text))
+        self.assertIn("1-2-3", telebote_page.tight(text))
+        self.assertGreater(page.waited, 0, "一度も待っていない")
+
+    def test_最初から描けていれば待たない(self):
+        text, page = self.read([self.FULL])
+        self.assertIn("合計ベット数", telebote_page.tight(text))
+        self.assertEqual(page.waited, 0)
+
+    def test_待っても描けなければ最後に読んだものを返す(self):
+        text, _ = self.read([self.HEAD], timeout_ms=300)
+        self.assertNotIn("合計ベット数", telebote_page.tight(text))
+        # そのまま照合に渡され、「場が無い」などで落ちる（黙って進まない）
+        ng = telebote_page.verify_text(text, "江戸川", 6, "1-2-3", 500, units=5)
+        self.assertTrue(any("場" in x for x in ng))
+
+
 class TestSlipCount(unittest.TestCase):
     """ベットリストの件数。2026-09-22 に4件積み上がった原因はここ
 
