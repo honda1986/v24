@@ -24,15 +24,31 @@ function New-BoatTask {
         -ExecutionTimeLimit (New-TimeSpan -Minutes $LimitMinutes) `
         -StartWhenAvailable
     if ($RestartCount -gt 0) {
+        # ★RestartInterval は「PT15M」の形（ISO 8601）で入れること。
+        #   New-TimeSpan を後から代入すると XML に "00:15:00" と書かれ、
+        #   Register-ScheduledTask が
+        #     「タスク XML に、書式設定が正しくない値または範囲外の値が
+        #       含まれています。(43,28):Interval:00:15:00」
+        #   で落ちる。-ExecutionTimeLimit のようにコマンドレットの引数で
+        #   渡すぶんには変換されるが、後からの代入は変換されない。
+        #
+        #   ★これを踏んだせいで boat_motor だけ登録されていなかった
+        #     （2026-09-20〜09-22）。RestartCount を使うのは motor だけなので、
+        #     prefetch と yosou は成功し、motor だけが黙って飛ばされていた。
+        #     Register-ScheduledTask のエラーは終了させない種類なので、
+        #     スクリプトはそのまま残り2つを登録して最後まで走ってしまう。
         $settings.RestartCount = $RestartCount
-        $settings.RestartInterval = (New-TimeSpan -Minutes 15)
+        $settings.RestartInterval = "PT15M"
     }
     # ユーザーがログオンしていなくても動かす
     $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME `
                  -LogonType S4U -RunLevel Limited
 
+    # ★-ErrorAction Stop を付けること。既定では登録に失敗しても赤い字が
+    #   出るだけでスクリプトは続き、「登録しました」も出ないまま次へ行く。
+    #   最後の確認コマンドを打たないと、1つ足りないことに気づけない。
     Register-ScheduledTask -TaskName $Name -Action $action -Trigger $Triggers `
-        -Settings $settings -Principal $principal -Force | Out-Null
+        -Settings $settings -Principal $principal -Force -ErrorAction Stop | Out-Null
     Write-Host "登録しました: $Name"
 }
 
@@ -53,6 +69,19 @@ $yosou.Repetition = (New-ScheduledTaskTrigger -Once -At 7:57am `
     -RepetitionInterval (New-TimeSpan -Minutes 3) `
     -RepetitionDuration (New-TimeSpan -Hours 16)).Repetition
 New-BoatTask -Name "boat_yosou" -Arg "yosou" -LimitMinutes 10 -Triggers $yosou
+
+# ★登録し終わったら、自分で数えて確かめる。
+#   人間が確認コマンドを打つのを当てにしない（打たなかったので2日気づけなかった）
+Write-Host ""
+$want = @("boat_motor", "boat_prefetch", "boat_yosou")
+$have = @(Get-ScheduledTask -TaskName $want -ErrorAction SilentlyContinue |
+          Select-Object -ExpandProperty TaskName)
+$miss = @($want | Where-Object { $_ -notin $have })
+if ($miss.Count -gt 0) {
+    Write-Host "★登録できていないタスクがあります: $($miss -join ', ')" -ForegroundColor Red
+    throw "タスクが $($miss.Count) 個足りません"
+}
+Write-Host "3つとも登録できています: $($have -join ', ')" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "確認:  Get-ScheduledTask boat_* | Format-Table TaskName, State"

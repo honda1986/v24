@@ -135,6 +135,28 @@ powershell -ExecutionPolicy Bypass -File .\register_tasks.ps1
 手で登録する場合は、**開始（作業フォルダ）を `C:\boat\v24`** にしてください。
 既定の `C:\Windows\System32` のままだとファイルが見つかりません。
 
+### ★登録したら、3つ揃っているか必ず数えること
+
+```
+powershell -c "Get-ScheduledTask boat_* | Format-Table TaskName, State"
+```
+
+`boat_motor` / `boat_prefetch` / `boat_yosou` の**3つ**が `Ready` で出ること。
+
+2026-09-20〜09-22 に、**`boat_motor` だけが登録されていなかった**ことがあります。
+`register_tasks.ps1` の `RestartInterval` の書式が正しくなく
+（`00:15:00` ではなく `PT15M` でなければならない）、`RestartCount` を使うのは
+motor だけなので、**motor だけが赤いエラーで飛ばされ、残り2つは登録されて
+スクリプトは最後まで走っていました**。
+
+そのあいだ yosou は動いていたので通知は普通に来ていて、
+**結果（的中・払戻）とモーター純度だけが2日ぶん止まっている**ことに
+誰も気づけませんでした。いまは
+- `register_tasks.ps1` が最後に3つ揃ったかを数えて、足りなければ止まる
+- `daily.py`（GitHub 側・23:50）が「結果が2日以上入っていない」「モーター純度が古い」で鳴る
+
+の2段で拾えるようにしてあります。
+
 ### なぜ yosou を「3分おきに1回ずつ」にするか
 
 GitHub では「3時間走り続けるジョブの中でループ」でした（起動が当てにならないため）。
