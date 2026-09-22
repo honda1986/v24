@@ -23,6 +23,7 @@ history.json の picks は、通知した時点では結果が空。翌日 Kフ�
     満たさなくなっていたら、それは選別そのものが幻だったということ
 """
 import argparse
+import datetime
 import glob
 import gzip
 import io
@@ -63,22 +64,51 @@ PQ_ANA = 1.15          # 穴側(試験)のしきい値。select_rule.ANA_PQ_MIN 
                        # ★2026-09-20 に 1.097 から変更。それ以前の記録を
                        #   混ぜて数えると基準が揃わないので注意
 RAW_URL = "https://raw.githubusercontent.com/honda1986/v22/main/raw/{}.json.gz"
+K_URL = "https://raw.githubusercontent.com/honda1986/v22/main/kfile/{}.json.gz"
 
 COMBOS = [f"{a}-{b}-{c}" for a in range(1, 7) for b in range(1, 7) if b != a
           for c in range(1, 7) if c not in (a, b)]
 CIX = {c: i for i, c in enumerate(COMBOS)}
 
 
+def fetch_gz(path, url):
+    """手元のファイル、無ければ URL から1日ぶんだけ取る。取れなければ None。
+
+    ★2026-09-22: kfile はここを見ていなかった（raw だけ URL に落ちていた）。
+      PC 側の v22 の git pull が失敗すると kfile が古いまま止まり、
+      settle が「Kファイルがまだありません」と言い続けて結果が入らなくなる。
+      実際に 09/20・09/21 の結果が2日ぶん入らなかった。
+      手元の clone に依存しないよう、kfile も URL へ落とせるようにする。
+    """
+    if os.path.exists(path):
+        try:
+            return open(path, "rb").read()
+        except OSError:
+            pass
+    try:
+        with urllib.request.urlopen(url, timeout=30) as r:
+            return r.read()
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
 def kmap(kdir, date):
-    p = f"{kdir}/{date}.json.gz"
-    if not os.path.exists(p):
+    """その日の着順と3連単の払戻。(jcd,rno) -> (組, 払戻)。取れなければ None。"""
+    blob = fetch_gz(f"{kdir}/{date}.json.gz", K_URL.format(date))
+    if blob is None:
+        return None
+    try:
+        with gzip.open(io.BytesIO(blob), "rt", encoding="utf-8") as f:
+            rd = json.load(f)
+    except (OSError, ValueError):
         return None
     out = {}
-    with gzip.open(p, "rt", encoding="utf-8") as f:
-        for r in json.load(f).get("races") or []:
-            if r.get("hit"):
-                out[(r["jcd"], r["rno"])] = (r["hit"], float(r.get("pay_3t") or 0))
-    return out
+    for r in rd.get("races") or []:
+        if r.get("hit"):
+            out[(r["jcd"], r["rno"])] = (r["hit"], float(r.get("pay_3t") or 0))
+    # ★空の辞書は「Kファイルはあるが中身が無い」＝まだ確定していない、と読む。
+    #   None を返して次の周に持ち越す（空を返すと全部が「結果が取れない」になる）
+    return out or None
 
 
 def rawmap(rawdir, date):
@@ -87,16 +117,9 @@ def rawmap(rawdir, date):
     ★手元に無ければ v22 リポジトリから1日ぶん(70KB程度)だけ取る。
       raw を丸ごと checkout すると60MB超になるので、それは避ける。
     """
-    blob = None
-    p = f"{rawdir}/{date}.json.gz"
-    if os.path.exists(p):
-        blob = open(p, "rb").read()
-    else:
-        try:
-            with urllib.request.urlopen(RAW_URL.format(date), timeout=30) as r:
-                blob = r.read()
-        except (urllib.error.URLError, OSError, ValueError):
-            return None
+    blob = fetch_gz(f"{rawdir}/{date}.json.gz", RAW_URL.format(date))
+    if blob is None:
+        return None
     try:
         with gzip.open(io.BytesIO(blob), "rt", encoding="utf-8") as f:
             rd = json.load(f)
@@ -168,6 +191,10 @@ def main():
         return
 
     filled = waiting = afilled = 0
+    stale = []          # 2日以上前なのに結果が入っていない日
+    # ★Kファイルは翌朝に出る。前日ぶんが未確定なのは普通。
+    #   2日以上前が残っていたら、取り込みのどこかが止まっている
+    cutoff = (datetime.date.today() - datetime.timedelta(days=2)).strftime("%Y%m%d")
     for day in h.get("days") or []:
         pend = [p for p in day.get("picks") or [] if p.get("hit") is None]
         # 目減りだけまだ入っていないレースも拾う（結果が先に入った場合）
@@ -194,6 +221,8 @@ def main():
             waiting += len(pend) + len(apend)
             print(f"  {day['date']} Kファイルがまだありません"
                   f"（{len(pend)+len(apend)}件は結果待ち）")
+            if day["date"] < cutoff:
+                stale.append((day["date"], len(pend) + len(apend)))
             continue
         for p in pend:
             got = km.get((p["jcd"], p["rno"]))
@@ -226,6 +255,16 @@ def main():
 
     with open(SITE, "w", encoding="utf-8") as f:
         json.dump(h, f, ensure_ascii=False)
+
+    if stale:
+        print()
+        print("★★ 2日以上前なのに結果が入っていない日があります ★★")
+        for dt, n in stale:
+            print(f"    {dt}  {n}件")
+        print("    v22 の kfile が取れていません。ふだんは手元の "
+              "../v22/kfile を見て、無ければ GitHub から落とします。")
+        print("    どちらも駄目ということは、ネットに出られていないか、"
+              "v22 にその日の K ファイルがまだ入っていません。")
 
     # 通しの成績を出す
     dated = [(d["date"], p) for d in (h.get("days") or [])

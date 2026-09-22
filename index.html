@@ -225,6 +225,12 @@ h2{font-size:13px;margin:0 0 10px;color:var(--accent);font-weight:900;
 .warn b{color:var(--ink)}
 #anacard{border-color:rgba(143,178,255,.30)}
 .empty{color:var(--dim);font-size:12px;padding:14px 12px;text-align:center}
+/* 結果が何日も入っていないときの警告。見えないと気づけない */
+.alarm{margin:10px;padding:10px 12px;border-radius:10px;font-size:12px;
+       border:1px solid var(--bad);background:rgba(228,114,107,.09);color:var(--ink)}
+.alarm b{color:var(--bad)}
+.alarm .d{font-family:var(--mono);font-size:11px;color:var(--sub);display:block;
+          margin-top:4px}
 
 /* 日ごとの一覧（成績タブ） */
 .dlist{display:flex;flex-direction:column;gap:3px}
@@ -279,6 +285,7 @@ h2{font-size:13px;margin:0 0 10px;color:var(--accent);font-weight:900;
 <div class="wrap">
 
 <section id="view-day" role="tabpanel" aria-labelledby="tab-day">
+  <div id="alarm"></div>
   <div class="dstat" id="dstat"></div>
   <div class="map" id="map"></div>
   <div class="tools">
@@ -753,6 +760,31 @@ function goDay(i, key){
 }
 
 // ===================== 通算成績 =====================
+// ★結果（的中・払戻）が何日も入っていないことに気づけるようにする。
+//   Kファイルは翌朝に出るので、前日ぶんが未確定なのは普通。
+//   2日以上前が残っていたら、PC の 06:00 の motor タスクが止まっている。
+function drawAlarm(){
+  const box = document.getElementById("alarm");
+  box.textContent = "";
+  if(!DAYS.length) return;
+  const latest = DAYS[0].date;
+  const t = new Date(+latest.slice(0,4), +latest.slice(4,6)-1, +latest.slice(6,8));
+  t.setDate(t.getDate() - 2);
+  const cutoff = t.getFullYear() * 10000 + (t.getMonth()+1) * 100 + t.getDate();
+  const bad = DAYS.filter(d => +d.date <= cutoff
+    && [...(d.picks||[]), ...(d.ana||[])].some(p => p.hit === null || p.hit === undefined));
+  if(!bad.length) return;
+  const a = el("div","alarm");
+  const n = bad.reduce((s,d) => s
+    + [...(d.picks||[]), ...(d.ana||[])].filter(p => p.hit == null).length, 0);
+  a.appendChild(el("b", null, `★ ${bad.length}日ぶん（${n}レース）の結果が入っていません`));
+  a.appendChild(el("span","d", bad.map(d => fmtDate(d.date)).join("  ")));
+  a.appendChild(el("span","d",
+    "PC の 06:00 の motor タスク（settle.py）を確かめてください。"
+    + "ログは C:\\boat\\logs\\motor_日付.log です。"));
+  box.appendChild(a);
+}
+
 function drawSummary(data){
   const days = DAYS;
   const picks = days.flatMap(d => (d.picks||[]).map(p => ({...p, date:d.date})));
@@ -934,6 +966,7 @@ function render(data){
   document.documentElement.style.setProperty("--hh", hh + "px");
 
   drawSummary(data);
+  drawAlarm();
 
   // #d=20260922&r=17-7 の形で開けるようにする
   const m = /d=(\d{8})(?:&r=([\d-]+))?/.exec(location.hash || "");
