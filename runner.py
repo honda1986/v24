@@ -359,15 +359,25 @@ class Task:
                      else f"  v22 を取り込めず: {out.strip()[:120]}")
         kfile = os.path.join(self.v22 or "../v22", "kfile")
         raw = os.path.join(self.v22 or "../v22", "raw")
-        self.run_py("motor.py", "--kfile", kfile, "--days", "400",
-                    "--out", "motor/latest.json")
-        # motor.yml と同じ検算。500人に満たなければ止める
-        j = load_json(os.path.join(self.repo, "motor/latest.json"), {})
-        n = len(j.get("values") or {})
-        self.log(f"  モーター純度 {j.get('date')} {n}人")
-        if n < 500:
-            raise RuntimeError(f"モーター純度が {n}人 しかありません（500人未満）")
+        # ★settle は motor と関係が無いので、motor が転んでも必ず走らせる。
+        #   前は motor.py の失敗や「500人未満」で例外を投げ、settle まで
+        #   届かなかった。結果（的中・払戻）が入らない原因になる。
+        bad = None
+        try:
+            self.run_py("motor.py", "--kfile", kfile, "--days", "400",
+                        "--out", "motor/latest.json")
+            # motor.yml と同じ検算。500人に満たなければ止める
+            j = load_json(os.path.join(self.repo, "motor/latest.json"), {})
+            n = len(j.get("values") or {})
+            self.log(f"  モーター純度 {j.get('date')} {n}人")
+            if n < 500:
+                raise RuntimeError(f"モーター純度が {n}人 しかありません（500人未満）")
+        except Exception as e:
+            bad = e
+            self.log(f"  ★motor は失敗しましたが settle は続けます: {e}")
         self.run_py("settle.py", "--kfile", kfile, "--raw", raw, check=False)
+        if bad:
+            raise bad
         return f"motor+settle: {now_jst():%Y%m%d}"
 
 
