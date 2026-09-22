@@ -28,6 +28,7 @@
   dry / live を動かしたときに、開いた Chrome で手でログインします。
 """
 import os
+import time
 import re
 import unicodedata
 
@@ -56,6 +57,9 @@ SELECTORS = {
     "amount": "role=textbox || input[type=text] || input[type=number] "
               "|| input:not([type=hidden])",
     "add_to_slip": "text=ベットリストに追加して投票へ進む",
+    # ★ベットリスト画面が描き終わった印。「次へ」だけを待つと、まだ表が
+    #   出ていない段階で先へ進んでしまう（2026-09-22 実機で起きた）
+    "slip_ready": "text=合計ベット数",
     "to_confirm": "role=button[name=\"次へ\"]",
     "confirm_mark": "text=投票はまだ完了していません",   # 確認画面に着いた印
     # 照合に使う範囲。表が複数あるので、「合計金額」が載っている表を選ぶ。
@@ -105,6 +109,8 @@ AMOUNT_IN_UNITS = True
 
 # 待ち時間は固定秒ではなく、要素が出るのを待つ
 TIMEOUT_MS = 20000
+# ベットリストが描き終わるのを待つ上限。締切直前でも間に合う長さにする
+SLIP_WAIT_MS = 8000
 
 
 class SelectorNotSet(Exception):
@@ -484,6 +490,39 @@ class TelebotePage:
                 self.page.wait_for_selector(_sel("to_confirm"), timeout=TIMEOUT_MS)
             except Exception:
                 raise BetAborted("ベットリストの画面に進めませんでした")
+            # ★「次へ」が出ていても、表と合計はまだ描けていないことがある。
+            #   合計ベット数が出るまで待つ（2026-09-22 江戸川6R・宮島7R）
+            ready = (SELECTORS.get("slip_ready") or "").strip()
+            if ready:
+                try:
+                    self.page.wait_for_selector(ready, timeout=TIMEOUT_MS)
+                except Exception:
+                    pass        # 出なくても、次の照合が待ちながら読み直す
+
+    def slip_text(self, b, timeout_ms=SLIP_WAIT_MS):
+        """ベットリスト画面の文字を、描き終わってから読む
+
+        ★2026-09-22: 追加した直後に読むと、ヘッダーとメニューだけが返って
+          くることがあった（実機のログで、1回目だけ「場も組も無い」と出た）。
+          それを「1件も入っていない」と読んで打ち切り、次の周がもう1件
+          積み増す——を繰り返して4件たまった。
+          合計ベット数と自分の組が揃うまで、少し待ってから読む。
+          待っても揃わなければ、最後に読めた文字をそのまま返す（照合が落とす）。
+        """
+        want = tight(b.combo)
+        deadline = time.time() + timeout_ms / 1000.0
+        text = ""
+        while True:
+            try:
+                text = self.page.inner_text("body")
+            except Exception:
+                text = text or ""
+            packed = tight(text)
+            if "合計ベット数" in packed and want in packed:
+                return text
+            if time.time() >= deadline:
+                return text
+            self.page.wait_for_timeout(250)
 
     def check_slip(self, b, yen):
         """ベットリスト画面の中身を照合する
@@ -491,7 +530,7 @@ class TelebotePage:
         確認画面の1つ手前。ここで見ておけば、買い残りが混ざっていることにも、
         入っていないことにも、進む前に気づける。
         """
-        text = self.page.inner_text("body")
+        text = self.slip_text(b)
         units = units_of(yen) if AMOUNT_IN_UNITS else None
         ng = verify_text(text, b.place, b.rno, b.combo, yen, units)
         if ng:
@@ -637,13 +676,44 @@ def bet(page, b, yen, live, shot_dir=None, top_url=""):
     return TelebotePage(page, shot_dir=shot_dir, top_url=top_url).bet(b, yen, live)
 
 
+SLIP_TOTAL_RE = re.compile(r"合計ベット数([0-9]+)ベット")
+
+
+def slip_count_in_text(text, url=""):
+    """画面の文字から、ベットリストの件数を読む。読めなければ None
+
+    画面もネットも要らないので、テストから直接叩ける。
+
+    ★ヘッダーの赤いバッジは数字が文字として出てこない（2026-09-22 実機で確認。
+      inner_text にも locator にも「4」が現れなかった）。読めるのは
+      ベットリスト画面の「合計ベット数 N ベット」だけ。
+    ★ベットリスト画面なのに合計が無ければ、空（0件）。
+      それ以外の画面では None（＝分からない）を返すこと。0 と決めつけると、
+      入っているのに「空だ」と誤判定して、買い残りの上に積み増す。
+    """
+    m = SLIP_TOTAL_RE.search(tight(text or ""))
+    if m:
+        return int(m.group(1))
+    if "betlist" in (url or "").lower():
+        return 0
+    return None
+
+
 def slip_left(page):
     """ベットリストに残っている件数。読めなければ None
 
-    ★ヘッダーの赤いバッジは画像か CSS の飾りで、文字としては読めない。
-      読めたときだけ使い、読めなければ None（＝分からない）を返すこと。
-      件数が 0 だと決めつけると、入っているのに「入らなかった」と誤判定する。
+    ★2026-09-22: ヘッダーのバッジを読む作りだったが、実機では数字が
+      文字として取れず、いつも None を返していた。その None を
+      clear_slip が「空」と読んで何もせず True を返していたため、
+      失敗するたびに買い目が積み上がった（江戸川6R で4件）。
+      いまはベットリスト画面の「合計ベット数」を先に見る。
     """
+    try:
+        n = slip_count_in_text(page.inner_text("body"), getattr(page, "url", "") or "")
+    except Exception:
+        n = None
+    if n is not None:
+        return n
     sel = (SELECTORS.get("slip_badge") or "").strip()
     if not sel:
         return None
@@ -662,13 +732,15 @@ def slip_left(page):
 def clear_slip(page):
     """ベットリストを空にする
 
-    dry は投票を押さないので、試すたびに1件残る。残っていると、次に
-    追加しても確認画面に載らない（合計ベット数が空・合計金額0円になる）。
+    dry は投票を押さないので、試すたびに1件残る。live でも、ベットリストに
+    入れたあとで失敗すると同じように1件残る。残ったまま次の周でもう一度
+    追加すると「合計ベット数2ベット」になり、照合が通らず永久に買えない。
 
     消し方は推測なので、消せたかどうかは件数で確かめる。
     駄目なら False を返し、手で消してもらう。
     """
-    if not slip_left(page):
+    # ★None（分からない）を「空」と読んではいけない。分からないなら押しに行く
+    if slip_left(page) == 0:
         return True
     for name in ("slip_open", "slip_clear", "slip_clear_ok"):
         sel = (SELECTORS.get(name) or "").strip()
@@ -682,7 +754,9 @@ def clear_slip(page):
                 break
             except Exception:
                 continue
-    return not slip_left(page)
+    # ★ここでも None は「消せた」ではない。分からないものは False にして、
+    #   手で確かめてもらう
+    return slip_left(page) == 0
 
 
 def open_top(page, url):

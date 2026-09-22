@@ -190,7 +190,19 @@ class Runner:
                 return self._uncertain(b, e)
             except Exception as e:
                 # 画面が中途半端なまま次のレースへ進むと、違うレースに投票する事故になる
-                self.log.bet(b, "失敗", f"{type(e).__name__}: {e} ★手で確認してください")
+                #
+                # ★ここに来るのは「押す前に転んだ」ときだけ（押した後は
+                #   BetUncertain で上に抜ける）。だからベットリストを片付けてよい。
+                #   片付けないと、次の周が同じ組をもう1件積み、合計ベット数が
+                #   合わなくなって、それ以降どのレースも買えなくなる。
+                #   2026-09-22 江戸川6R で実際に4件積み上がった。
+                note = f"{type(e).__name__}: {e}"
+                cleaned = self.cleanup_fn() if self.cleanup_fn else None
+                if cleaned is True:
+                    note += "｜ベットリストは片付けました"
+                elif cleaned is False:
+                    note += "｜★ベットリストに残りがあります。テレボートの画面で消してください"
+                self.log.bet(b, "失敗", f"{note} ★手で確認してください")
                 return "abort"
 
             if self.mode == "dry":
@@ -315,7 +327,10 @@ def make_bet_fn(cfg, page):
 
 
 def make_cleanup_fn(page, log):
-    """dry のあと、ベットリストに残った買い目を片付ける"""
+    """ベットリストに残った買い目を片付ける
+
+    dry のあと（押さないので必ず1件残る）と、live で押す前に転んだあと。
+    """
     def cleanup_fn():
         try:
             ok = telebote_page.clear_slip(page)
@@ -468,6 +483,11 @@ def main(argv=None):
                 print("  このままだと確認画面の合計が合わず、投票を止めます。")
                 print("  テレボートの画面で、先に消してください。")
                 log.event("見送った", f"ベットリストに {left} 件残っている")
+            elif left is None:
+                # ★トップの画面からは件数が読めない（バッジの数字は文字として
+                #   取れない）。読めないことを黙って「空」と思わないこと。
+                log.event("見た", "ベットリストの件数はこの画面では読めません"
+                                  "（買う直前に見ます）")
             runner = Runner(cfg, store, args.mode, log,
                             bet_fn=make_bet_fn(cfg, page),
                             keepalive_fn=make_keepalive_fn(cfg, page, log),
