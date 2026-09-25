@@ -41,9 +41,9 @@ def load_kweather(kfile_dir):
       風向が枠ごとに効くことが分かったので入れる。
     ★Kファイルはレース時の記録値。本番の直前情報は展示時の値で、
       実測では「レース N の直前情報 ＝ Kファイルのレース N-1」だった
-      （§17-1）。波高・風速でもともと同じずれがあり、select_rule の
-      注意書きと同じ扱いにする。ここを厳密にしたいなら collect_before.py
-      が貯めている直前情報のほうを使うこと。
+      （§17-1）。なので load_days では features.kfile_as_before で
+      レース N-1 の値を使う（レース N の値だと本番で分からない情報で
+      学習してしまい、良く見えすぎる）。
     """
     out = {}
     if not kfile_dir:
@@ -127,8 +127,8 @@ def load_days(raw_dir, tok_dir, pure_path, kfile_dir=None):
                 })
             if not ok:
                 continue
-            wave, wind, wdir = kw.get((int(d), r["jcd"], r["rno"]),
-                                      (None, None, None))
+            # ★直前情報に相当する値（レース N-1）。features.kfile_as_before
+            wave, wind, wdir = F.kfile_as_before(kw, int(d), r["jcd"], r["rno"])
             mt = {"jcd": r["jcd"], "rno": r["rno"], "day_no": day_no,
                   "n_days": n_days, "wave": wave, "wind": wind,
                   "wind_w": F.wind_w(r["jcd"], wdir),

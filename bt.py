@@ -83,6 +83,8 @@ def collect(args):
             q, q1 = F.market_probs(od)
             if q is None:
                 continue
+            fx = F.kfile_as_before(kw, int(d), r["jcd"], r["rno"])
+            fx = (fx[0], fx[1], F.wind_w(r["jcd"], fx[2]))
             nm, day_no, n_days = meta.get((r["jcd"], r["rno"]), ("", None, None))
             lanes = []
             for e in sorted(r["entries"], key=lambda z: z["lane"]):
@@ -112,6 +114,9 @@ def collect(args):
                   # ★Kファイルの風向(方位)を水面基準の w に直す（§17-1）。
                   #   本番は直前情報の is-wind がそのまま w なので変換は要らない
                   "wind_w": F.wind_w(r["jcd"], wdir),
+                  # ★モデルに渡す気象は直前情報相当（レース N-1）。
+                  #   上の wave/wind（足切り用）は従来どおりレース N
+                  "fx": dict(zip(("wave", "wind", "wind_w"), fx)),
                   "is_final": 1 if any(w in (nm or "")
                                        for w in ("準優", "優勝", "選抜")) else 0}
             out.append((int(d), lanes, mt, np.asarray(od, float), q, q1,

@@ -68,6 +68,22 @@ def wind_w(jcd, wind_dir):
         return None
     return ((round(deg / 22.5) + d + 8 - 1) % 16) + 1
 
+
+def kfile_as_before(kw, date, jcd, rno):
+    """Kファイルの気象 {(日付,場,R): (波高,風速,風向)} から、本番の直前情報に
+    相当する値を返す。
+
+    ★直前情報のレース N の気象は Kファイルのレース N-1 と同じだった
+      （band_howto.md §17-1、22/22 一致）。本番のモデルは直前情報しか
+      見られないので、学習・検証でも N-1 を使う。N を使うとレース時点の
+      風（本番では分からない値）で学習してしまう。
+      1R は前が無いので 1R 自身で代用する。
+    """
+    none = (None, None, None)
+    if rno > 1 and (date, jcd, rno - 1) in kw:
+        return kw[(date, jcd, rno - 1)]
+    return kw.get((date, jcd, rno), none) if rno == 1 else none
+
 # 3連単120通りの並び。市場オッズもモデル出力もこの順に揃える
 COMBOS = [f"{a}-{b}-{c}" for a in range(1, 7) for b in range(1, 7) if b != a
           for c in range(1, 7) if c not in (a, b)]
@@ -143,7 +159,10 @@ def build_race(lanes, meta, q1, feats=None):
         d[f"{c}_in"] = z
     # 水面気象。w=5 が追い風、w=13 が向かい風、w=9 が左から、w=1 が右から
     # （band_howto.md §18-1）。風速が取れていなければ向きも使わない。
-    wave, wind, ww = meta.get("wave"), meta.get("wind"), meta.get("wind_w")
+    # meta["fx"] があればそちらを使う（bt.py: 足切りはレース時の値、
+    # モデルには直前情報相当の値、と分けるため）
+    wx = meta.get("fx") or meta
+    wave, wind, ww = wx.get("wave"), wx.get("wind"), wx.get("wind_w")
     d["wave"] = np.full(6, np.nan if wave is None or float(wave) < 0
                         else float(wave))
     sp = np.nan if wind is None or float(wind) < 0 else float(wind)
