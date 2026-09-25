@@ -10,7 +10,7 @@
      足切りありの数字に戻すには ok==1 で絞ること。
    ★帯側も見られるように p は補正なし/g/g+h の3本とも落とす。
 """
-import argparse, os, sys
+import argparse, json, os, sys
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import features as F
@@ -38,6 +38,7 @@ _ana_ok = SR.ana_ok
 SR.band_ok = lambda jcd, wave, wind: True
 
 m1 = lgb.Booster(model_file=f"{args.model}/lgb_mf.txt")
+model_feats = json.load(open(f"{args.model}/features.json", encoding="utf-8"))
 m2 = S.load(args.model); m3 = T.load(args.model)
 assert m2 is not None and m3 is not None
 
@@ -53,7 +54,7 @@ NAMES = ["date", "race", "jcd", "rno", "combo", "first", "second", "third",
          "p_h"]
 chunks = []
 for rno_, (d, lanes, mt, od, q, q1, hit) in enumerate(races):
-    X = F.build_race(lanes, mt, q1)
+    X = F.build_race(lanes, mt, q1, feats=model_feats)
     raw = np.asarray(m1.predict(X), dtype=float)
     p1 = raw / raw.sum()
     base = F.trifecta(p1, q)

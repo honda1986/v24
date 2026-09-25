@@ -113,11 +113,19 @@ def load_model():
     feats = _load(f"{MODEL_DIR}/features.json")
     if feats is None:
         sys.exit(f"{MODEL_DIR}/features.json がありません。train.py で作ってください")
-    if feats != F.FEATS:
-        sys.exit("★モデルの特徴量が features.py と食い違っています。"
-                 f"モデル{len(feats)}個 / いま{len(F.FEATS)}個。学習し直してください")
-    print(f"{datetime.now(OF.JST):%Y%m%d} の予想を作ります (特徴量 {len(feats)}個)")
-    return lgb.Booster(model_file=f"{MODEL_DIR}/lgb_mf.txt")
+    # ★モデルが要求する並びで特徴量を作る。features.py に新しいものを足しても、
+    #   古いモデルはそれを受け取らないまま動き続ける（2026-09-23）。
+    #   ただし「features.py が知らない名前」がモデル側にあれば必ず止める。
+    #   黙って NaN で埋めると、ずれたまま予想が出て気づけない。
+    unknown = [f for f in feats if f not in F.FEATS]
+    if unknown:
+        sys.exit("★モデルの特徴量を features.py が作れません: "
+                 f"{unknown[:5]}。学習し直してください")
+    extra = len(F.FEATS) - len(feats)
+    print(f"{datetime.now(OF.JST):%Y%m%d} の予想を作ります (特徴量 {len(feats)}個"
+          + (f" / features.py には {extra}個 多くあります。"
+             "学習し直すと使われます" if extra > 0 else "") + ")")
+    return lgb.Booster(model_file=f"{MODEL_DIR}/lgb_mf.txt"), feats
 
 
 def load_motor(path="motor/latest.json"):
@@ -567,7 +575,7 @@ def main():
     #   次の本番実行で通知済みのレースを二重に通知する。
     if not args.dry and date == now.strftime("%Y%m%d"):
         prune(date)
-    model = load_model()
+    model, model_feats = load_model()
     # ★2着の補正（メモ §30）。model/lgb_2nd.txt が無ければ None で、
     #   そのとき g=1 となり従来とまったく同じ動きになる。
     m2 = SEC.load(MODEL_DIR)
@@ -679,6 +687,11 @@ def main():
                 site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "出走表の形が違います", wave, wind)
             continue
         lanes, meta = got
+        # ★水面気象をモデルに渡す（2026-09-23 追加）。
+        #   古いモデルは features.json にこれらが無いので受け取らない。
+        #   wind_w は直前情報の is-wind<N> そのもの（水面基準）。
+        meta["wave"], meta["wind"] = wave, wind
+        meta["wind_w"] = BI.wind_w(info)
         # 展示タイムは出走表側を優先し、無ければ直前情報で補う
         for x in lanes:
             if not x.get("tenji"):
@@ -710,7 +723,7 @@ def main():
                 site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "オッズが取れません",
                           wave, wind, nmot=nmot)
             continue
-        X = F.build_race(lanes, meta, q1)
+        X = F.build_race(lanes, meta, q1, feats=model_feats)
         raw = np.asarray(model.predict(X), dtype=float)
         p1 = raw / raw.sum()
         cp = F.trifecta(p1, q)

@@ -45,7 +45,8 @@ def collect(args):
             continue
         with gzip.open(path, "rt", encoding="utf-8") as f:
             for r in json.load(f)["races"]:
-                kw[(d, r["jcd"], r["rno"])] = (r.get("wave"), r.get("wind"))
+                kw[(d, r["jcd"], r["rno"])] = (r.get("wave"), r.get("wind"),
+                                               r.get("wind_dir"))
     print(f"kfile {len(kw):,}レース", flush=True)
     tokf = {os.path.basename(x)[:8]: x for x in glob.glob(f"{args.tokuten}/*.json.gz")}
     out = []
@@ -75,7 +76,8 @@ def collect(args):
                 continue
             if r["hit"] not in F.CIX:
                 continue
-            wave, wind = kw.get((int(d), r["jcd"], r["rno"]), (None, None))
+            wave, wind, wdir = kw.get((int(d), r["jcd"], r["rno"]),
+                                      (None, None, None))
             if not SR.band_ok(r["jcd"], wave, wind):
                 continue
             q, q1 = F.market_probs(od)
@@ -107,6 +109,9 @@ def collect(args):
                     "mot_pure": None if np.isnan(mp) else mp})
             mt = {"jcd": r["jcd"], "rno": r["rno"], "day_no": day_no,
                   "n_days": n_days, "wave": wave, "wind": wind,
+                  # ★Kファイルの風向(方位)を水面基準の w に直す（§17-1）。
+                  #   本番は直前情報の is-wind がそのまま w なので変換は要らない
+                  "wind_w": F.wind_w(r["jcd"], wdir),
                   "is_final": 1 if any(w in (nm or "")
                                        for w in ("準優", "優勝", "選抜")) else 0}
             out.append((int(d), lanes, mt, np.asarray(od, float), q, q1,
@@ -221,9 +226,15 @@ def main():
           f"穴側のレース最低オッズ足切り <{SR.ANA_RACE_MIN_ODDS}")
     import lightgbm as lgb
 
+    # ★yosou.py と同じ。モデルが要求する並びで作る（2026-09-23）
     with open(f"{args.model}/features.json", encoding="utf-8") as f:
-        if json.load(f) != F.FEATS:
-            sys.exit("★モデルの特徴量が features.py と食い違っています")
+        model_feats = json.load(f)
+    unknown = [f for f in model_feats if f not in F.FEATS]
+    if unknown:
+        sys.exit(f"★モデルの特徴量を features.py が作れません: {unknown[:5]}")
+    if len(model_feats) < len(F.FEATS):
+        print(f"  モデルの特徴量 {len(model_feats)}個 / features.py は "
+              f"{len(F.FEATS)}個（学習し直すと増えます）")
     m1 = lgb.Booster(model_file=f"{args.model}/lgb_mf.txt")
     m2 = S.load(args.model)
     m3 = T.load(args.model)
@@ -244,7 +255,7 @@ def main():
     ana_thr = SR.ANA_RACE_MIN_ODDS
     SR.ANA_RACE_MIN_ODDS = float("inf")
     for rno_, (d, lanes, mt, od, q, q1, hit) in enumerate(races):
-        X = F.build_race(lanes, mt, q1)
+        X = F.build_race(lanes, mt, q1, feats=model_feats)
         raw = np.asarray(m1.predict(X), dtype=float)
         p1 = raw / raw.sum()
         base = F.trifecta(p1, q)
