@@ -92,6 +92,30 @@ def _save(path, obj):
         json.dump(obj, f, ensure_ascii=False)
 
 
+SNAP_DIR = "snap"
+
+
+def snap_odds(date, jcd, rno, left, odds):
+    """判定に使ったオッズ120個を snap/YYYYMMDD.jsonl に1行足す。
+
+    ★バックテストは確定オッズで判定しているが、本番は締切2〜15分前の
+      オッズで判定する（band_howto.md §15）。その差を後から測るための記録。
+      買った組だけでなく、見たレースは全部残す。
+    ★git には入れない（3分おきに commit すると履歴が膨らむ）。
+      翌朝 runner.py motor が snap_pack.py で1日1ファイルにまとめて保存する。
+      記録に失敗しても予想は止めない。
+    """
+    try:
+        os.makedirs(SNAP_DIR, exist_ok=True)
+        row = {"t": datetime.now(OF.JST).strftime("%H:%M:%S"), "jcd": int(jcd),
+               "rno": int(rno), "left": None if left is None else int(left),
+               "odds": [None if o is None else float(o) for o in odds]}
+        with open(f"{SNAP_DIR}/{date}.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(row, separators=(",", ":")) + "\n")
+    except (OSError, TypeError, ValueError) as e:
+        print(f"  (オッズの記録に失敗: {e})")
+
+
 def prune(date):
     """当日ぶん以外のキャッシュと通知記録を消す。
 
@@ -715,6 +739,8 @@ def main():
             print(f"  {tag} 持ち時間を大きく超えたので中止")
             break
         odds = OF.fetch_odds(date, jcd, rno)
+        if odds and not args.dry:
+            snap_odds(date, jcd, rno, left, odds)
         q, q1 = F.market_probs(odds) if odds else (None, None)
         if q is None:
             print(f"  {tag} オッズが取れません")
