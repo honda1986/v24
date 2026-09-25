@@ -35,7 +35,8 @@ else:
 
 sh("python", "v24/train.py",
    "--raw", "v22/raw", "--tokuten", "v22/tokuten",
-   "--pure", "/content/pure.npz", "--out", "/content/model_out",
+   "--pure", "/content/pure.npz", "--kfile", "v22/kfile",
+   "--out", "/content/model_out",
    "--cut", "20250316")
 
 # v24 側にも置く（push セルがここを見る）

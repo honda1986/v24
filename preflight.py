@@ -39,12 +39,15 @@ def g1_model():
         feats = json.load(open("model/features.json", encoding="utf-8"))
     except (OSError, ValueError) as e:
         return gate("モデルと特徴量", False, f"読めない: {e}")
-    if feats != F.FEATS:
+    unknown = [f for f in feats if f not in F.FEATS]
+    if unknown:
         return gate("モデルと特徴量", False,
-                    f"食い違い モデル{len(feats)} / いま{len(F.FEATS)}")
+                    f"features.py に無い名前 {unknown[:3]}")
     if not os.path.isfile("model/lgb_mf.txt"):
         return gate("モデルと特徴量", False, "lgb_mf.txt が無い")
-    return gate("モデルと特徴量", True, f"{len(feats)}個で一致")
+    extra = len(F.FEATS) - len(feats)
+    return gate("モデルと特徴量", True,
+                f"{len(feats)}個で一致" + (f"（未使用 {extra}個）" if extra else ""))
 
 
 def g2_motor(today):

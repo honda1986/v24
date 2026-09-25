@@ -10,6 +10,8 @@ v22/predict.py の fetch_beforeinfo() をそのまま独立モジュールにし
   exhibition_st 展示ST           {艇番: "…"}
   weight        体重             {艇番: kg}
   weather       水面気象          {"風速","気温","水温","波高"}
+  wind_w        水面基準の風向     1〜16。17は無風。取れなければ None
+  venue_dir     その場の水面の向き  1〜16。取れなければ None
 
 ★ 引き継ぎメモ §1 の注意
   raw/ と kfile/ の course は「本番進入」でリーク。
@@ -60,6 +62,10 @@ def _closest_class(node, cls):
     return None
 
 
+RE_WIND_CLASS = re.compile(r"weather1_bodyUnitImage\s+is-wind(\d+)")
+RE_DIR_CLASS = re.compile(r"weather1_bodyUnitImage\s+is-direction(\d+)")
+
+
 def _start_timing(row):
     if row is None:
         return None
@@ -82,13 +88,13 @@ def fetch(date, jcd, rno, tries=2):
     """直前情報。取れなかった項目は空のまま返す。"""
     url = f"{BASE}/beforeinfo?rno={rno}&jcd={jcd:02d}&hd={date}"
     best = {"tenji": {}, "course_in": {}, "exhibition_st": {},
-            "weight": {}, "weather": {}}
+            "weight": {}, "weather": {}, "wind_w": None, "venue_dir": None}
     for attempt in range(max(1, tries)):
         soup = _soup(url)
         if soup is None:
             continue
         out = {"tenji": {}, "course_in": {}, "exhibition_st": {},
-               "weight": {}, "weather": {}}
+               "weight": {}, "weather": {}, "wind_w": None, "venue_dir": None}
         card = soup.find("table", class_=lambda c: c and "is-w748" in c)
         for tb in (card.find_all("tbody") if card else []):
             tr = tb.find("tr")
@@ -135,6 +141,19 @@ def fetch(date, jcd, rno, tries=2):
                     if m:
                         out["weather"][title] = float(m.group(1))
                     break
+        # ★風向。矢印とコンパスは文字ではなく class に入っている
+        #   （band_howto.md §17-1 / §18-1 で確認）。
+        #     weather1_bodyUnitImage is-wind<N>        水面の図の上での風の向き
+        #     weather1_bodyUnitImage is-direction<N>   その場の水面の向き
+        #   w=5 が追い風、w=13 が向かい風、w=9 が左から、w=1 が右から。
+        #   w=17 は無風。スマホ版は JavaScript で描いていて取れないので、
+        #   ここで見ているPC版だけが頼り。
+        html = str(wbox)
+        mw = RE_WIND_CLASS.search(html)
+        md = RE_DIR_CLASS.search(html)
+        out["wind_w"] = int(mw.group(1)) if mw else None
+        out["venue_dir"] = int(md.group(1)) if md else None
+
         # ★気象も点数に入れる。入れないと、展示の数が同じで気象だけ空の
         #   取得結果が前の良い結果を上書きし、波・風が取れず見送りになる。
         #   同点では上書きしない（先に取れたほうを残す）。
@@ -149,6 +168,16 @@ def fetch(date, jcd, rno, tries=2):
         if attempt + 1 < tries:
             time.sleep(0.6)
     return best
+
+
+def wind_w(info):
+    """features に渡す水面基準の風向 w(1〜16)。無風(17)・不明は None。
+
+    ★17（無風）も None にして返す。features.build_race は
+      「向きが無い＝押す力ゼロ」として同じに扱うので、区別する意味がない。
+    """
+    w = (info or {}).get("wind_w")
+    return w if isinstance(w, int) and 1 <= w <= 16 else None
 
 
 def wave_wind(info):

@@ -33,7 +33,33 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import features as F
 
 
-def load_days(raw_dir, tok_dir, pure_path):
+def load_kweather(kfile_dir):
+    """Kファイルから (日付, 場, R) → (波高, 風速, 風向) を集める。
+
+    ★2026-09-23 追加。それまで学習側は気象を一切使っていなかった
+      （build_race に渡していなかった）。band_howto.md §18 で
+      風向が枠ごとに効くことが分かったので入れる。
+    ★Kファイルはレース時の記録値。本番の直前情報は展示時の値で、
+      実測では「レース N の直前情報 ＝ Kファイルのレース N-1」だった
+      （§17-1）。なので load_days では features.kfile_as_before で
+      レース N-1 の値を使う（レース N の値だと本番で分からない情報で
+      学習してしまい、良く見えすぎる）。
+    """
+    out = {}
+    if not kfile_dir:
+        return out
+    for path in sorted(glob.glob(f"{kfile_dir}/*.json.gz")):
+        d = int(os.path.basename(path)[:8])
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            for r in json.load(f).get("races") or []:
+                out[(d, r["jcd"], r["rno"])] = (r.get("wave"), r.get("wind"),
+                                                r.get("wind_dir"))
+    print(f"kfile {len(out):,}レースぶんの気象")
+    return out
+
+
+def load_days(raw_dir, tok_dir, pure_path, kfile_dir=None):
+    kw = load_kweather(kfile_dir)
     p = np.load(pure_path, allow_pickle=True)
     pk = p["date"].astype(np.int64) * 100000 + p["toban"]
     po = np.argsort(pk)
@@ -101,8 +127,11 @@ def load_days(raw_dir, tok_dir, pure_path):
                 })
             if not ok:
                 continue
+            # ★直前情報に相当する値（レース N-1）。features.kfile_as_before
+            wave, wind, wdir = F.kfile_as_before(kw, int(d), r["jcd"], r["rno"])
             mt = {"jcd": r["jcd"], "rno": r["rno"], "day_no": day_no,
-                  "n_days": n_days,
+                  "n_days": n_days, "wave": wave, "wind": wind,
+                  "wind_w": F.wind_w(r["jcd"], wdir),
                   "is_final": 1 if any(w in (nm or "")
                                        for w in ("準優", "優勝", "選抜")) else 0}
             X.append(F.build_race(lanes, mt, q1))
@@ -120,13 +149,16 @@ def main():
     ap.add_argument("--raw", default="v22/raw")
     ap.add_argument("--tokuten", default="v22/tokuten")
     ap.add_argument("--pure", default="pure.npz")
+    # ★気象(波高・風速・風向)はKファイルにしか無い。空にすると
+    #   wave/wind/w_along/w_cross が全部 NaN になり、実質いままでと同じ
+    ap.add_argument("--kfile", default="v22/kfile")
     ap.add_argument("--out", default="model")
     ap.add_argument("--cut", type=int, default=20250316,
                     help="この日より前だけで学習する")
     args = ap.parse_args()
     import lightgbm as lgb
 
-    X, Y, D = load_days(args.raw, args.tokuten, args.pure)
+    X, Y, D = load_days(args.raw, args.tokuten, args.pure, args.kfile)
     n = len(D)
     print(f"\n読み込み {n:,}レース × 6艇 × {X.shape[2]}特徴量")
     tr = D < args.cut

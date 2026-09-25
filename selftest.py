@@ -55,9 +55,14 @@ def main():
     fp = "model/features.json"
     if os.path.exists(fp):
         saved = json.load(open(fp, encoding="utf-8"))
-        same = saved == F.FEATS
-        print(f"   model/features.json と features.py: {'一致' if same else '★不一致'}")
-        ok &= same
+        unknown = [f for f in saved if f not in F.FEATS]
+        print(f"   model/features.json と features.py: "
+              f"{'★features.py に無い名前 ' + str(unknown[:3]) if unknown else '一致'}"
+              f"（モデル{len(saved)} / いま{len(F.FEATS)}）")
+        ok &= not unknown
+        if not unknown:
+            Xm = F.build_race(lanes, meta, q1, feats=saved)
+            ok &= Xm.shape == (6, len(saved))
     else:
         print("   model/features.json がまだありません(train.py 未実行)")
 
