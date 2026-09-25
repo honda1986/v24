@@ -43,7 +43,7 @@ from datetime import datetime, timedelta, timezone
 JST = timezone(timedelta(hours=9), "JST")
 
 # 取り込みと保存で面倒を見るもの。yosou.yml / motor.yml / prefetch.yml と同じ
-DATA_DIRS = ("state", "cache", "motor")
+DATA_DIRS = ("state", "cache", "motor", "before", "odds_snap")
 DATA_FILES = ("history.json",)
 
 
@@ -376,6 +376,16 @@ class Task:
             bad = e
             self.log(f"  ★motor は失敗しましたが settle は続けます: {e}")
         self.run_py("settle.py", "--kfile", kfile, "--raw", raw, check=False)
+        # ★検証用の記録（2026-09-25）。どちらも失敗しても本体は止めない。
+        #   ・判定時オッズ（yosou が snap/ に貯めた分）を1日1ファイルに
+        #   ・前日〜3日前の直前情報（展示進入・展示ST・風向）を before/ に。
+        #     既にある日は collect_before.py がすぐ戻るので、PC が止まっていた
+        #     日も次の朝に取り戻せる
+        self.run_py("snap_pack.py", check=False)
+        today = now_jst().date()
+        for k in (3, 2, 1):
+            d = (today - timedelta(days=k)).strftime("%Y%m%d")
+            self.run_py("collect_before.py", "--date", d, check=False)
         if bad:
             raise bad
         return f"motor+settle: {now_jst():%Y%m%d}"

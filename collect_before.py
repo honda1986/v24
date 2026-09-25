@@ -59,7 +59,11 @@ def main():
                           "exhibition_st": {str(k): v for k, v
                                             in info["exhibition_st"].items()},
                           "weight": {str(k): v for k, v in info["weight"].items()},
-                          "weather": info["weather"]})
+                          "weather": info["weather"],
+                          # 水面基準の風向（w=5 追い風 / 13 向かい風、17 無風）と
+                          # その場の水面の向き（band_howto.md §17-1）
+                          "wind_w": info.get("wind_w"),
+                          "venue_dir": info.get("venue_dir")})
     if not races:
         print("取れませんでした")
         return
