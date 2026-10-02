@@ -6,6 +6,8 @@ name: daily
 on:
   schedule:
     - cron: "50 14 * * *"      # UTC 14:50 = JST 23:50（ミッドナイトの後）
+    # ★実際の起動は毎日3〜5時間遅れる（翌日の3〜5時）。daily.py は正午より前に
+    #   動いたら前日を集計するので、遅れても正しく集計される
   workflow_dispatch:
 
 jobs:
