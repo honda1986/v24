@@ -59,8 +59,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", default=None)
     ap.add_argument("--ntfy", default=os.environ.get("NTFY_TOPIC", ""))
+    ap.add_argument("--now", default=None, help="試験用: いまの時刻 YYYYMMDDHHMM（JST）")
     args = ap.parse_args()
-    date = args.date or datetime.now(JST).strftime("%Y%m%d")
+    now = (datetime.strptime(args.now, "%Y%m%d%H%M").replace(tzinfo=JST)
+           if args.now else datetime.now(JST))
+    # ★GitHub の定期実行は遅れる。23:50 のはずが実測で毎日 3〜5時間遅れ、
+    #   翌日の 3:00〜5:00 に動いていた（2026-09-22〜10-01）。そのまま「今日」を
+    #   集計すると、まだ1回も動いていない翌日を見て毎日「異常」を出していた。
+    #   正午より前に動いたら、前日の集計とみなす。
+    late = args.date is None and now.hour < 12
+    date = args.date or ((now - timedelta(days=1)) if late else now).strftime("%Y%m%d")
 
     h = load(SITE, {}) or {}
     days = {d["date"]: d for d in (h.get("days") or [])}
@@ -69,7 +77,7 @@ def main():
     skipped = (day or {}).get("skipped") or {}
     runs = (day or {}).get("runs", 0)
     last = (day or {}).get("last_run", "—")
-    hour = datetime.now(JST).hour
+    hour = now.hour
 
     # ★数え方に注意。
     #   skipped は「見送った回数」で、同じレースを何回も見るので重複する。
@@ -134,7 +142,7 @@ def main():
     # 異常の判定。「静かなだけ」と「壊れている」を分ける
     alarm = []
     # ★ミッドナイトは23時台まで走るので、それ以前は「まだ途中」とみなす
-    early = hour < 23      # レースが終わる前に手で回した場合
+    early = hour < 23 and not late     # レースが終わる前に手で回した場合
     if runs == 0:
         alarm.append("yosou が1回も動いていない。ワークフローを確認すること")
     elif looked == 0 and not early:
@@ -173,6 +181,8 @@ def main():
                  f"直近3日 {recent[2]}/{recent[1]}/{recent[0]}レース")
     if early:
         body += "\n(まだレース中の時間帯です。定期実行は23:50)"
+    if late:
+        body += f"\n(GitHub の起動が遅れて {now:%m/%d %H:%M} に動いたので、前日ぶんの集計です)"
 
     print(title)
     print(body)
