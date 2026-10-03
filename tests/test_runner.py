@@ -393,7 +393,10 @@ class TestTaskArgs(unittest.TestCase):
     def test_prefetch(self):
         t = self.Fake()
         self.assertTrue(t.prefetch().startswith("prefetch: "))
-        self.assertEqual(t.calls, [["prefetch.py"]])
+        self.assertEqual(t.calls[0], ["prefetch.py"])
+        # 前日の結果も入れる（Kファイルが motor の後に届く日のため）
+        self.assertEqual(t.calls[1][0], "settle.py")
+        self.assertIn("--kfile", t.calls[1])
 
     def test_motorはkfileとrawを渡す(self):
         t = self.Fake(v22="/boat/v22")

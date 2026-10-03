@@ -125,7 +125,7 @@ powershell -ExecutionPolicy Bypass -File .\register_tasks.ps1
 | タスク | 起動 | 打ち切り |
 |---|---|---|
 | `boat_motor` | 毎日 6:00（失敗したら15分後に3回まで） | 60分 |
-| `boat_prefetch` | 毎日 7:00 / 10:00 / 13:00 | 30分 |
+| `boat_prefetch` | 毎日 7:00 / 10:00 / 13:00（前日の結果の取り込みも。Kファイルが motor の後に届く日のため） | 30分 |
 | `boat_yosou` | 毎日 7:57 から**3分おきに16時間**（23:57まで） | 10分 |
 
 共通の設定（`register_tasks.ps1` が入れています）:
