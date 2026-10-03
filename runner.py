@@ -346,19 +346,29 @@ class Task:
         self.run_py(*args, check=False)     # 失敗しても次の周が拾う
         return f"state: {now_jst():%H%M}"
 
-    # prefetch.yml: python prefetch.py || true
-    def prefetch(self):
-        self.run_py("prefetch.py", check=False)
-        return f"prefetch: {now_jst():%Y%m%d-%H%M}"
-
-    # motor.yml: v22 を取り込む → motor.py → settle.py
-    def motor(self):
+    def pull_v22(self):
         if self.v22 and os.path.isdir(os.path.join(self.v22, ".git")):
             ok, out = git(self.v22, "pull", "-q", "--ff-only")
             self.log("  v22 を取り込みました" if ok
                      else f"  v22 を取り込めず: {out.strip()[:120]}")
-        kfile = os.path.join(self.v22 or "../v22", "kfile")
-        raw = os.path.join(self.v22 or "../v22", "raw")
+        return (os.path.join(self.v22 or "../v22", "kfile"),
+                os.path.join(self.v22 or "../v22", "raw"))
+
+    # prefetch.yml: python prefetch.py || true
+    def prefetch(self):
+        self.run_py("prefetch.py", check=False)
+        # ★前日の結果をここでも入れる（2026-10-03）。v22 の Kファイルは
+        #   03:00 の予定が GitHub の遅れで毎日 05:40〜07:50 にずれ込み、
+        #   06:00 の motor より後に届く日が多い。そのままだと結果が
+        #   丸1日遅れて（D+2 の朝に）入っていた。settle は未確定の組だけを
+        #   埋めるので、何度回しても同じ結果になる。
+        kfile, raw = self.pull_v22()
+        self.run_py("settle.py", "--kfile", kfile, "--raw", raw, check=False)
+        return f"prefetch: {now_jst():%Y%m%d-%H%M}"
+
+    # motor.yml: v22 を取り込む → motor.py → settle.py
+    def motor(self):
+        kfile, raw = self.pull_v22()
         # ★settle は motor と関係が無いので、motor が転んでも必ず走らせる。
         #   前は motor.py の失敗や「500人未満」で例外を投げ、settle まで
         #   届かなかった。結果（的中・払戻）が入らない原因になる。
