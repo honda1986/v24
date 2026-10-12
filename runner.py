@@ -43,7 +43,7 @@ from datetime import datetime, timedelta, timezone
 JST = timezone(timedelta(hours=9), "JST")
 
 # 取り込みと保存で面倒を見るもの。yosou.yml / motor.yml / prefetch.yml と同じ
-DATA_DIRS = ("state", "cache", "motor", "before", "odds_snap")
+DATA_DIRS = ("state", "cache", "motor", "before", "odds_snap", "stats")
 DATA_FILES = ("history.json",)
 
 
@@ -364,6 +364,7 @@ class Task:
         #   埋めるので、何度回しても同じ結果になる。
         kfile, raw = self.pull_v22()
         self.run_py("settle.py", "--kfile", kfile, "--raw", raw, check=False)
+        self.run_py("calib.py", "--kfile", kfile, check=False)     # 予想の精度
         return f"prefetch: {now_jst():%Y%m%d-%H%M}"
 
     # motor.yml: v22 を取り込む → motor.py → settle.py
@@ -386,6 +387,8 @@ class Task:
             bad = e
             self.log(f"  ★motor は失敗しましたが settle は続けます: {e}")
         self.run_py("settle.py", "--kfile", kfile, "--raw", raw, check=False)
+        # ★予想の精度（stats/calib.json）。内訳は14日で消えるので毎朝集計して残す
+        self.run_py("calib.py", "--kfile", kfile, check=False)
         # ★検証用の記録（2026-09-25）。どちらも失敗しても本体は止めない。
         #   ・判定時オッズ（yosou が snap/ に貯めた分）を1日1ファイルに
         #   ・前日〜3日前の直前情報（展示進入・展示ST・風向）を before/ に。

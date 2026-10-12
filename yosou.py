@@ -244,6 +244,20 @@ def top_combos(cp, q, odds, n=TOP_N):
     return out
 
 
+def _lane_extra(x):
+    """lanes の記録に足す項目。根拠（features.explain）と、根拠の数値に要る3つ。
+
+    ★空や None は書かない。history.json は3分おきに commit するので膨らませない。
+    """
+    out = {}
+    if x.get("why"):
+        out["why"] = x["why"]
+    for k in ("l_win", "c_win", "st_setsu"):
+        if x.get(k) is not None:
+            out[k] = round(float(x[k]), 2)
+    return out
+
+
 def site_log(date, place, jcd, rno, close, buys, cp, q, odds, wave, wind, skipped,
              lanes=None, p1=None, q1=None, nmot=None, buys_alt=None,
              rule="base", top=None, left=None):
@@ -297,6 +311,7 @@ def site_log(date, place, jcd, rno, close, buys, cp, q, odds, wave, wind, skippe
                             else round(float(x["mot_pure"]), 4)),
                     "p": round(float(p1[i]), 4) if p1 is not None else None,
                     "q": round(float(q1[i]), 4) if q1 is not None else None,
+                    **_lane_extra(x),
                 } for i, x in enumerate(sorted(lanes or [],
                                               key=lambda z: z["lane"]))],
             })
@@ -384,6 +399,7 @@ def site_race(date, place, jcd, rno, close, status, wave, wind,
             "mot": (None if x.get("mot_pure") is None
                     else round(float(x["mot_pure"]), 4)),
             "p": round(float(p1[i]), 4), "q": round(float(q1[i]), 4),
+            **_lane_extra(x),
         } for i, x in enumerate(sorted(lanes, key=lambda z: z["lane"]))]
     # ★すでに「買い」や「穴のみ」で記録されているレースを、あとの周で
     #   「買い目なし」に上書きしない（2026-09-13）。
@@ -752,6 +768,15 @@ def main():
         X = F.build_race(lanes, meta, q1, feats=model_feats)
         raw = np.asarray(model.predict(X), dtype=float)
         p1 = raw / raw.sum()
+        # ★予想サイトの「根拠」。市場と枠番を除いた要因の寄与の上位3つ。
+        #   記録だけなので、失敗しても予想は止めない
+        try:
+            why = F.explain(model.predict(X, pred_contrib=True), model_feats)
+        except Exception as e:          # noqa: BLE001
+            print(f"  (根拠を作れず: {type(e).__name__})")
+            why = [""] * len(lanes)
+        for x, w in zip(lanes, why):
+            x["why"] = w
         cp = F.trifecta(p1, q)
         # ★2着の補正 g（メモ §30-33）。既定では「影で計算して記録するだけ」で、
         #   実際に買う中身は変えない。bt.py の結果が前半後半で割れたため、

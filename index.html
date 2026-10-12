@@ -175,6 +175,59 @@ table.lanes tr:last-child td{border-bottom:none}
 .fw{color:var(--accent)}
 .hl{background:rgba(242,194,48,.22);border-radius:3px}
 
+/* 根拠（市場の見立てから上げ下げした要因） */
+.why{margin-top:9px;border-top:1px solid rgba(38,54,59,.6);padding-top:7px}
+.why .wh{font-size:10px;color:var(--dim);margin:0 0 4px}
+.wrow{display:flex;align-items:flex-start;gap:7px;padding:3px 0}
+.wrow>.ln{flex:0 0 17px;margin-top:1px}
+.wchips{display:flex;flex-wrap:wrap;gap:4px;min-width:0}
+.wc{font-size:10.5px;border:1px solid var(--line);border-radius:5px;padding:1px 6px;
+    background:#0C1416;color:var(--sub);line-height:1.5}
+.wc .a{font-weight:800;margin-right:3px}
+.wc.up{border-color:rgba(95,192,139,.40)} .wc.up .a{color:var(--good)}
+.wc.dn{border-color:rgba(228,114,107,.35)} .wc.dn .a{color:var(--bad)}
+.wc b{color:var(--ink);font-family:var(--mono);font-weight:600;margin:0 4px}
+.wnone{font-size:10.5px;color:var(--dim)}
+
+/* 予想の精度（較正） */
+.cal-ctl{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 6px}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{background:var(--card2);color:var(--sub);border:none;padding:5px 10px;
+      font-size:11.5px;cursor:pointer;font-family:var(--sans)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:rgba(242,194,48,.12);color:var(--accent)}
+.cal h3{font-size:12px;margin:14px 0 2px;color:var(--ink);font-weight:800}
+.cal-leg{display:flex;gap:14px;font-size:10.5px;color:var(--sub);margin:2px 0 2px;
+      align-items:center}
+.cal-leg .n{margin-left:auto;color:var(--dim)}
+.cal-leg i{display:inline-block;vertical-align:-2px;margin-right:4px}
+.ring-i{width:11px;height:11px;border-radius:50%;border:2px solid var(--sub)}
+.dot-i{width:11px;height:11px;border-radius:50%;background:var(--blue)}
+.cal-row{display:grid;grid-template-columns:58px minmax(50px,1fr) 104px 46px;
+      align-items:center;gap:8px;padding:5px 0}
+.cal-row .lab{font-size:12px;color:var(--ink);white-space:nowrap}
+.trk{position:relative;height:18px}
+.trk::before{content:"";position:absolute;left:0;right:0;top:8px;height:2px;
+      background:#24343A;border-radius:1px}
+.trk .ring{position:absolute;top:1px;width:16px;height:16px;border-radius:50%;
+      border:2px solid var(--sub);transform:translateX(-8px);box-sizing:border-box}
+.trk .pt{position:absolute;top:3px;width:12px;height:12px;border-radius:50%;
+      background:var(--blue);transform:translateX(-6px)}
+.cal-row .v{font-family:var(--mono);text-align:right;font-size:13px;font-weight:800;
+      white-space:nowrap;font-variant-numeric:tabular-nums}
+.cal-row .v small{font-size:10px;color:var(--sub);font-weight:400;margin-left:4px}
+.cal-row .n{font-family:var(--mono);font-size:10.5px;color:var(--dim);text-align:right;
+      font-variant-numeric:tabular-nums}
+.cal-sub{font-size:11.5px;color:var(--sub);margin:2px 0 0}
+.cal-sub b{color:var(--ink);font-family:var(--mono)}
+.cal-cmp{display:grid;grid-template-columns:1fr auto auto;gap:3px 12px;
+      font-size:11.5px;color:var(--sub);background:var(--card2);
+      border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin:4px 0 2px}
+.cal-cmp .h{font-size:10px;color:var(--dim);text-align:right}
+.cal-cmp .x{font-family:var(--mono);text-align:right;color:var(--ink);
+      font-variant-numeric:tabular-nums}
+.cal-cmp .x.win{color:var(--good);font-weight:800}
+
 /* 3連単 出やすい順 */
 details.det{margin-top:9px}
 details.det>summary{font-size:11px;color:var(--blue);cursor:pointer;
@@ -329,6 +382,20 @@ h2{font-size:13px;margin:0 0 10px;color:var(--accent);font-weight:900;
       <div><span class="lab">オッズ目減り</span><span class="val" id="a-mv">—</span></div>
     </div>
     <p class="note" id="a-note" style="margin-top:9px"></p>
+  </section>
+
+  <section class="card cal" id="calcard" style="display:none">
+    <h2>予想の精度</h2>
+    <p class="note" style="margin-bottom:9px">予想した確率どおりに当たっているか。結果の出た全レースで数えています（買ったレースに限りません）。</p>
+    <div class="cal-ctl">
+      <div class="seg" id="cal-per">
+        <button data-v="7">7日</button><button data-v="30">30日</button><button data-v="all">全期間</button>
+      </div>
+      <div class="seg" id="cal-side">
+        <button data-v="p">モデル</button><button data-v="q">市場（オッズ）</button>
+      </div>
+    </div>
+    <div id="cal-body"></div>
   </section>
 
   <section class="card">
@@ -495,7 +562,202 @@ function laneTable(r){
     t.appendChild(tr);
   }
   wrap.appendChild(t);
-  return wrap;
+  if(!r.lanes.some(x => x.why)) return wrap;
+  // 根拠は表の横スクロールの外に置く（スマホで表と一緒に流れないように）
+  const outer = el("div");
+  outer.appendChild(wrap);
+  outer.appendChild(whyBlock(r));
+  return outer;
+}
+
+// ===================== 根拠 =====================
+// features.WHY と同じ記号。yosou.py が lanes[].why に "tj+nw-mp+" の形で残す
+// （寄与の大きい順に3つ。+ は押し上げ、- は押し下げ）。
+// ★市場(オッズ)と枠番の寄与は除いてある。モデルはオッズを土台にしているので、
+//   ここに出るのは「オッズの見立てから上げ下げした理由」。
+const CLS_NAME = {4:"A1", 3:"A2", 2:"B1", 1:"B2"};
+const WHY = {
+  nw:{k:"全国勝率",     f:x=>x.n_win,    s:v=>v.toFixed(2)},
+  lw:{k:"当地勝率",     f:x=>x.l_win,    s:v=>v.toFixed(2)},
+  m2:{k:"モーター2連率", f:x=>x.m_2ren,   s:v=>(v*100).toFixed(0)+"%"},
+  mp:{k:"モーター純度", f:x=>x.mot,      s:v=>(v>0?"+":"")+v.toFixed(3)},
+  tj:{k:"展示タイム",   f:x=>x.tenji,    s:v=>v.toFixed(2), small:true},
+  tk:{k:"今節得点率",   f:x=>x.tok,      s:v=>v.toFixed(2)},
+  ss:{k:"今節ST",       f:x=>x.st_setsu, s:v=>v.toFixed(2), small:true},
+  as:{k:"平均ST",       f:x=>x.st,       s:v=>v.toFixed(2), small:true},
+  cw:{k:"コース別1着率", f:x=>x.c_win,    s:v=>v.toFixed(0)+"%"},
+  cl:{k:"級別",         f:x=>x.cls,      s:v=>CLS_NAME[v]||"—"},
+  fl:{k:"フライング",   f:x=>x.f,        s:v=>"F"+v, norank:true},
+  wx:{k:"水面・風",     f:null},
+};
+
+function whyNote(code, x, lanes, up){
+  const w = WHY[code];
+  if(!w || !w.f) return "";
+  const v = w.f(x);
+  if(v === null || v === undefined || w.norank) return "";
+  const arr = lanes.map(w.f).filter(z => z !== null && z !== undefined);
+  if(arr.length < 2 || new Set(arr).size < 2) return "";
+  const better = w.small ? (z => z < v) : (z => z > v);
+  const rk = 1 + arr.filter(better).length;
+  const word = w.small ? ["速","遅"] : ["高","低"];
+  let note = rk === 1 ? `${arr.length}艇で最${word[0]}`
+           : rk === arr.length ? `${arr.length}艇で最${word[1]}` : `${rk}番目`;
+  if(code !== "cl"){
+    const mean = arr.reduce((a,b)=>a+b,0) / arr.length;
+    note += `(平均${w.s(code === "fl" ? Math.round(mean) : mean)})`;
+  }
+  // ★順位と向きが食い違うとき。v24 はオッズを土台にしているので、
+  //   「数字は悪いのに上げた」＝オッズがその数字を嫌いすぎている、と読む
+  //   （v23 はオッズを見ないので「◯コースなら十分」と書いていた）
+  const low = rk > arr.length / 2;
+  if(up && low) note += "　数字は悪いが、オッズほどではない";
+  else if(!up && !low) note += "　数字は良いが、オッズほどではない";
+  return note;
+}
+
+function whyBlock(r){
+  const box = el("div","why");
+  box.appendChild(el("p","wh",
+    "根拠　オッズの見立てから上げた(▲)・下げた(▼)要因。効いた順に3つまで"));
+  const lanes = r.lanes.slice().sort((a,b)=>a.lane-b.lane);
+  for(const x of lanes){
+    const row = el("div","wrow");
+    row.appendChild(el("span","ln ln"+x.lane, String(x.lane)));
+    const cs = el("div","wchips");
+    const items = [...(x.why || "").matchAll(/([a-z]{2})([+-])/g)];
+    if(!items.length) cs.appendChild(el("span","wnone","ほぼオッズどおり"));
+    for(const [, code, sg] of items){
+      const w = WHY[code]; if(!w) continue;
+      const up = sg === "+";
+      const c = el("span","wc " + (up ? "up" : "dn"));
+      c.appendChild(el("span","a", up ? "▲" : "▼"));
+      c.appendChild(document.createTextNode(w.k));
+      if(w.f){
+        const v = w.f(x);
+        if(v !== null && v !== undefined) c.appendChild(el("b", null, w.s(v)));
+        const n = whyNote(code, x, lanes, up);
+        if(n) c.appendChild(document.createTextNode(n));
+      }else if(r.wind != null){
+        c.appendChild(el("b", null, `風${r.wind}m 波${r.wave}cm`));
+      }
+      cs.appendChild(c);
+    }
+    row.appendChild(cs);
+    box.appendChild(row);
+  }
+  return box;
+}
+
+// ===================== 予想の精度（stats/calib.json） =====================
+let CALIB = null;
+function calAdd(a, b){
+  if(Array.isArray(a)) return a.map((v,i) => calAdd(v, b[i]));
+  if(a && typeof a === "object"){ const o = {}; for(const k in a) o[k] = calAdd(a[k], b[k]); return o; }
+  return (a || 0) + (b || 0);
+}
+function calRow(lab, pred, act, n){
+  const row = el("div","cal-row");
+  row.appendChild(el("span","lab", lab));
+  const t = el("div","trk");
+  const pos = v => Math.max(0, Math.min(100, v * 100)) + "%";
+  const ring = el("span","ring"); ring.style.left = pos(pred);
+  const pt = el("span","pt");     pt.style.left = pos(act);
+  t.appendChild(ring); t.appendChild(pt);
+  row.appendChild(t);
+  const v = el("span","v", n ? `${(act*100).toFixed(0)}%` : "—");
+  if(n) v.appendChild(el("small", null, `予想${(pred*100).toFixed(0)}%`));
+  row.appendChild(v);
+  row.appendChild(el("span","n", n.toLocaleString()));
+  return row;
+}
+function calLegend(){
+  const g = el("div","cal-leg");
+  const a = el("span"); a.appendChild(el("i","ring-i")); a.appendChild(document.createTextNode("予想した確率"));
+  const b = el("span"); b.appendChild(el("i","dot-i"));  b.appendChild(document.createTextNode("実際の割合"));
+  g.appendChild(a); g.appendChild(b); g.appendChild(el("span","n","件数"));
+  return g;
+}
+function drawCalib(){
+  const card = document.getElementById("calcard");
+  const days = CALIB && CALIB.days ? CALIB.days : {};
+  const dates = Object.keys(days).sort();
+  if(!dates.length){ card.style.display = "none"; return; }
+  card.style.display = "";
+  const per = store.get("v24.calp", "all"), side = store.get("v24.cals", "p");
+  for(const [id, val] of [["cal-per", per], ["cal-side", side]]){
+    for(const b of document.querySelectorAll(`#${id} button`)){
+      b.setAttribute("aria-pressed", b.dataset.v === val);
+      b.onclick = () => { store.set(id === "cal-per" ? "v24.calp" : "v24.cals", b.dataset.v); drawCalib(); };
+    }
+  }
+  // 期間は「記録がある最後の日」から数える（結果は翌日に入るので今日は無い）
+  let use = dates;
+  if(per !== "all"){
+    const last = dates[dates.length-1];
+    const d0 = new Date(+last.slice(0,4), +last.slice(4,6)-1, +last.slice(6,8));
+    d0.setDate(d0.getDate() - (+per) + 1);
+    const from = `${d0.getFullYear()}${String(d0.getMonth()+1).padStart(2,"0")}${String(d0.getDate()).padStart(2,"0")}`;
+    use = dates.filter(d => d >= from);
+  }
+  const s = use.map(d => days[d]).reduce(calAdd);
+  const body = document.getElementById("cal-body");
+  body.textContent = "";
+  body.appendChild(el("p","note",
+    `${fmtDate(use[0])} 〜 ${fmtDate(use[use.length-1])}　${use.length}日 ${s.n.toLocaleString()}レース`));
+
+  // モデルと市場を同じレースで並べる。較正だけでは「市場より当たる」かは分からない
+  const cmp = el("div","cal-cmp");
+  const fp = s.p.fav[0], fq = s.q.fav[0];
+  const rows = [["", "モデル", "市場"],
+    ["本命が1着になった割合", fp[1]/fp[0], fq[1]/fq[0], v => (v*100).toFixed(1)+"%", true],
+    ["1着の対数損失（小さいほど良い）", s.p.ll/s.n, s.q.ll/s.n, v => v.toFixed(3), false]];
+  rows.forEach((r, i) => {
+    if(i === 0){ cmp.appendChild(el("span")); cmp.appendChild(el("span","h", r[1])); cmp.appendChild(el("span","h", r[2])); return; }
+    const [lab, a, b, f, hi] = r;
+    const aw = hi ? a > b : a < b;
+    cmp.appendChild(el("span", null, lab));
+    cmp.appendChild(el("span", "x" + (aw ? " win" : ""), f(a)));
+    cmp.appendChild(el("span", "x" + (!aw ? " win" : ""), f(b)));
+  });
+  body.appendChild(cmp);
+  body.appendChild(el("p","note", "市場＝判定したときのオッズから出した確率。同じレースで数えています。"));
+
+  const S = s[side];
+  const who = side === "p" ? "" : "（市場）";
+  body.appendChild(el("h3", null, "本命が1着になった割合" + who));
+  body.appendChild(calLegend());
+  ["全体","混戦","中位","堅い"].forEach((lab, i) => {
+    const r = S.fav[i];
+    body.appendChild(calRow(lab, r[0] ? r[2]/r[0] : 0, r[0] ? r[1]/r[0] : 0, r[0]));
+  });
+  const J = (CALIB.judge || [0,.38,.55,1.01]).map(v => Math.round(v*100));
+  body.appendChild(el("p","note",
+    `本命の確率が ${J[1]}%未満＝混戦 / ${J[1]}〜${J[2]}%＝中位 / ${J[2]}%以上＝堅い`));
+
+  body.appendChild(el("h3", null, "3連単（モデル）"));
+  const t8 = s.t8;
+  body.appendChild(calRow("上位8組", t8[0] ? t8[2]/t8[0] : 0, t8[0] ? t8[1]/t8[0] : 0, t8[0]));
+  if(s.t1[0]){
+    const sub = el("p","cal-sub", "予想1位の組がそのまま的中: ");
+    sub.appendChild(el("b", null, `${(s.t1[1]/s.t1[0]*100).toFixed(1)}%`));
+    sub.appendChild(document.createTextNode(`(${s.t1[1]}/${s.t1[0]})`));
+    body.appendChild(sub);
+  }
+
+  body.appendChild(el("h3", null, "全艇の1着確率（確率の帯ごと）" + who));
+  body.appendChild(calLegend());
+  const B = CALIB.bands || [0,.05,.10,.20,.30,.45,.60,1.01];
+  S.cal.forEach((r, i) => {
+    const lo = Math.round(B[i]*100), hi = Math.min(100, Math.round(B[i+1]*100));
+    body.appendChild(calRow(`${lo}〜${hi}%`, r[0] ? r[2]/r[0] : 0, r[0] ? r[1]/r[0] : 0, r[0]));
+  });
+  const nt = el("p","note",
+    "点と丸が近いほど、表示した確率が信用できます。ただし近いだけでは「オッズより当たる」"
+    + "ことにはなりません（オッズの確率も同じくらい近い）。上の表の「モデル／市場」で比べてください。"
+    + "淡水の場や、気象が取れずモデルを回していないレースは入っていません。");
+  nt.style.marginTop = "10px";
+  body.appendChild(nt);
 }
 
 function topList(r, open){
@@ -984,11 +1246,19 @@ function fail(msg){
   document.getElementById("list").appendChild(el("p","empty", msg));
 }
 
-if(window.__DATA__){ render(window.__DATA__); }
+// 予想の精度は別ファイル。読めなくても本体の表示は止めない
+function loadCalib(){
+  if(window.__CALIB__){ CALIB = window.__CALIB__; drawCalib(); return; }
+  fetch("stats/calib.json?" + Date.now())
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(c => { CALIB = c; drawCalib(); })
+    .catch(() => {});
+}
+if(window.__DATA__){ render(window.__DATA__); loadCalib(); }
 else{
   fetch("history.json?" + Date.now())
     .then(r => r.ok ? r.json() : Promise.reject(r.status))
-    .then(render)
+    .then(d => { render(d); loadCalib(); })
     .catch(e => fail("history.json を読めません（" + e + "）。"));
 }
 </script>
