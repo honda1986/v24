@@ -95,7 +95,7 @@ def _save(path, obj):
 SNAP_DIR = "snap"
 
 
-def snap_odds(date, jcd, rno, left, odds):
+def snap_odds(date, jcd, rno, left, odds, done=False):
     """判定に使ったオッズ120個を snap/YYYYMMDD.jsonl に1行足す。
 
     ★バックテストは確定オッズで判定しているが、本番は締切2〜15分前の
@@ -110,6 +110,8 @@ def snap_odds(date, jcd, rno, left, odds):
         row = {"t": datetime.now(OF.JST).strftime("%H:%M:%S"), "jcd": int(jcd),
                "rno": int(rno), "left": None if left is None else int(left),
                "odds": [None if o is None else float(o) for o in odds]}
+        if done:
+            row["done"] = True          # 本番はもう買い終えたレース（記録だけ）
         with open(f"{SNAP_DIR}/{date}.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps(row, separators=(",", ":")) + "\n")
     except (OSError, TypeError, ValueError) as e:
@@ -654,6 +656,7 @@ def main():
     # 2. 締切まで WIN_LO〜WIN_HI 分のレースを拾う
     sched = close_times(date, targets, deadline=t0 + args.budget * 0.6)
     todo = []
+    snap_only = []      # 買い終えたレース。オッズを記録するだけ（下の ★記録だけ）
     for jcd, times in sched.items():
         for rno, hhmm in enumerate(times, start=1):
             net = OF.net_close(hhmm)
@@ -664,13 +667,17 @@ def main():
             #   （通知に失敗した場合も、あとで窓に入った場合も）二度と拾えず、
             #   穴側の記録が「帯も出たレース」に偏って欠ける。
             fin = key in done and (not ana_on or f"{key}a" in done)
-            if left is None or not (win_lo <= left <= win_hi) or fin:
+            if left is None or not (win_lo <= left <= win_hi):
+                continue
+            if fin:
+                snap_only.append((jcd, rno, net))
                 continue
             todo.append((jcd, rno, net, left))
     todo.sort(key=lambda z: z[3])
     print(f"締切{win_lo}〜{win_hi}分前のレース {len(todo)}件"
-          + (f"  (通知済み {len(done)}件)" if done else ""))
-    if not todo:
+          + (f"  (通知済み {len(done)}件)" if done else "")
+          + (f"  記録だけ {len(snap_only)}件" if snap_only else ""))
+    if not todo and not snap_only:
         return
 
     bought = bought_ana = 0
@@ -893,6 +900,21 @@ def main():
                       "買い" if ok else "穴のみ",
                       wave, wind, lanes, p1, q1, npt=len(buy) if ok else 0,
                       nmot=nmot, top=tops)
+    # ★記録だけ：買い終えたレースも、締切までオッズを残す（band_howto.md §22）。
+    #   買ったら二度と見ない作りだと、「締切に近い回だけで判定したら」を
+    #   公平に比べられない（早く買えたレースの遅い回が抜けて偏る）。
+    #   判定も通知もしない。持ち時間を大きく超えたらやめる。
+    if not args.dry:
+        for jcd, rno, net in snap_only:
+            if time.time() - t0 > args.budget + 60:
+                print(f"  持ち時間を超えたので記録だけの残り{len(snap_only)}件は次の回へ")
+                break
+            left = OF.mins_left(net, datetime.now(OF.JST))
+            if left is None or left < win_lo:
+                continue
+            odds = OF.fetch_odds(date, jcd, rno, verbose=False)
+            if odds:
+                snap_odds(date, jcd, rno, left, odds, done=True)
     if not args.dry and skips:
         site_log(date, None, None, None, None, None, None, None, None,
                  None, None, skips)

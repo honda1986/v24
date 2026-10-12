@@ -23,6 +23,13 @@ bt.py は「確定オッズで選んで、確定オッズで払う」。本番�
 
 ★データが貯まるほど区間が狭まる。2〜3か月貯まるまでは傾向を見る道具。
 ★ここの結果を見てしきい値を動かさないこと（band_howto.md §6-4）。
+
+★事前登録（2026-10-12、band_howto.md §22）:
+  「締切 LATE(5)分前以降の回だけで判定する」と本番の作り方を、
+  **2026-10-13 以降のデータだけで**比べる（--from 20261013）。
+  9/26〜10/10 の診断を見て立てた仮説なので、その期間で判定しない。
+  10/12 までは本番が買ったレースのその後の回を保存していない（買ったら見なかった）。
+  10/13 からは買ったレースも締切まで保存している（行に "done": true）。
 """
 import argparse
 import glob
@@ -42,15 +49,18 @@ import select_rule as SR        # noqa: E402
 import third as T               # noqa: E402
 
 BET = 100
+LATE = 5            # 事前登録した「締切に近い回だけ」の境目（分）。変えないこと
 
 
-def load_snaps(d):
+def load_snaps(d, frm=0, to=99999999):
     """(日付, 場, R) -> [(時刻, 締切まで分, オッズ120)]（時刻順）"""
     out = {}
     for path in sorted(glob.glob(f"{d}/*.json.gz")):
         with gzip.open(path, "rt", encoding="utf-8") as f:
             js = json.load(f)
         date = int(js["date"])
+        if not (frm <= date <= to):
+            continue
         for r in js.get("rows") or []:
             od = r.get("odds") or []
             if len(od) == 120 and all(o and o > 0 for o in od):
@@ -128,9 +138,11 @@ def main():
     ap.add_argument("--model", default="model")
     ap.add_argument("--snap", default="odds_snap")
     ap.add_argument("--history", default="history.json")
+    ap.add_argument("--from", dest="frm", type=int, default=0)
+    ap.add_argument("--to", type=int, default=99999999)
     args = ap.parse_args()
 
-    snaps = load_snaps(args.snap)
+    snaps = load_snaps(args.snap, args.frm, args.to)
     if not snaps:
         raise SystemExit(f"{args.snap}/ に判定時オッズがありません")
     lo, hi = min(k[0] for k in snaps), max(k[0] for k in snaps)
@@ -146,7 +158,7 @@ def main():
     SR.band_ok = band_ok
     M = Model(args.model)
 
-    A, B, ANA = [], [], []          # 判定時オッズ / 確定オッズ / 穴側(判定時)
+    A, B, ANA, L = [], [], [], []   # 判定時オッズ / 確定オッズ / 穴側(判定時) / 遅い回だけ
     per_left = {}                   # 各回を独立に判定したとき（診断）
     mine = {}
     nr = 0
@@ -157,10 +169,13 @@ def main():
         nr += 1
         pay_of = lambda i: float(od_f[i]) * BET if i == hit else 0.0
         # --- 本番の再現：最初に帯が出た回で買う ---
-        bought = ana_done = False
+        bought = ana_done = late_done = False
         for t, left, od in snaps[key]:
             q, cp = M.predict(lanes, mt, od)
             buy = SR.pick(q, cp, SR.PQ_MIN_GH)
+            if buy and not late_done and left is not None and left <= LATE:
+                late_done = True
+                L += [(d, pay_of(i), od[i], q[i], i == hit) for i in buy]
             for i in buy:                                    # 診断：各回を独立に
                 per_left.setdefault(left, []).append((d, pay_of(i), od[i], q[i], i == hit))
             if buy and not bought:
@@ -181,6 +196,8 @@ def main():
     summary("帯", A)
     print("\n【確定オッズで選ぶ＝従来の bt.py と同じ条件（同じレース）】")
     summary("帯", B)
+    print(f"\n【事前登録の比較】締切{LATE}分前以降の回だけで判定（2026-10-13 以降で判定すること）")
+    summary(f"帯・{LATE}分前以降", L)
     print("\n【穴側（判定時オッズ、記録のみのルール）】")
     summary("穴側", ANA)
 
@@ -198,7 +215,8 @@ def main():
     for lo_, hi_ in ((2, 4), (5, 7), (8, 10), (11, 15)):
         rows = [r for k, v in per_left.items() if k is not None and lo_ <= k <= hi_ for r in v]
         summary(f"締切{lo_:>2}〜{hi_:>2}分前", rows)
-    print("  ※本番は買ったら次の回を保存しないので、遅い回ほど「早く買えなかったレース」に偏る")
+    print("  ※10/12 までは買ったレースの次の回を保存していないので、遅い回ほど"
+          "「早く買えなかったレース」に偏る（10/13 から解消）")
 
 
 if __name__ == "__main__":
