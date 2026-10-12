@@ -185,6 +185,46 @@ def build_race(lanes, meta, q1, feats=None):
     return np.column_stack([d[f] for f in want])
 
 
+# 予想サイトの「根拠」に出す要因のまとまり。2文字の記号は index.html と同じ。
+# ★市場(lq など)と枠番は入れない。モデルは市場を土台にしているので、
+#   残りの要因の寄与が「市場の見立てから上げ下げした理由」になる。
+#   年齢・体重・開催日などは数値を見せても読めないので出さない（v23 と同じ）。
+WHY = [
+    ("nw", ["n_win", "n_2ren", "n_win_dev", "n_win_rk", "n_win_in"]),       # 全国勝率
+    ("lw", ["l_win", "l_2ren", "l_win_dev", "l_win_rk"]),                  # 当地勝率
+    ("m2", ["m_2ren", "b_2ren", "m_2ren_dev", "m_2ren_rk", "m_2ren_in"]),  # モーター2連率
+    ("mp", ["mot_pure"]),                                                  # モーター純度
+    ("tj", ["tenji", "tenji_dev", "tenji_rk"]),                            # 展示タイム
+    ("tk", ["tok", "tok_dev", "tok_rk", "tok_in", "srank"]),               # 今節得点率
+    ("ss", ["st_setsu", "st_setsu_dev", "st_setsu_rk", "st_setsu_in"]),    # 今節ST
+    ("as", ["avg_st", "avg_st_dev", "avg_st_rk", "avg_st_in"]),            # 平均ST
+    ("cw", ["c_win", "c_win_dev", "c_win_rk", "c_ren3", "c_st"]),          # コース別成績
+    ("cl", ["cls_val", "cls_max", "cls_gap"]),                             # 級別
+    ("fl", ["f_count", "is_f2", "has_f"]),                                 # フライング
+    ("wx", ["wave", "wind", "w_along", "w_cross"]),                        # 水面・風
+]
+
+
+def explain(contrib, feats, k=3, eps=0.02):
+    """各艇の「根拠」。押し上げた/押し下げた要因の上位 k 個を "tj+nw-mp+" の形で返す。
+
+    contrib : booster.predict(X, pred_contrib=True) の戻り値 (6, 特徴量+1)
+    feats   : X の列の並び（model/features.json）
+    eps     : これより小さい寄与（1着かどうかの対数オッズ）は出さない
+    """
+    fi = {f: i for i, f in enumerate(feats)}
+    out = []
+    for row in np.asarray(contrib, float):
+        sc = []
+        for code, cols in WHY:
+            c = sum(row[fi[f]] for f in cols if f in fi)
+            if abs(c) >= eps:
+                sc.append((abs(c), code, "+" if c > 0 else "-"))
+        sc.sort(reverse=True)
+        out.append("".join(code + s for _, code, s in sc[:k]))
+    return out
+
+
 def trifecta(p1, q):
     """1着だけモデルに差し替え、2着3着は市場の条件付き構造を借りる。
 

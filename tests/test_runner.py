@@ -397,6 +397,7 @@ class TestTaskArgs(unittest.TestCase):
         # 前日の結果も入れる（Kファイルが motor の後に届く日のため）
         self.assertEqual(t.calls[1][0], "settle.py")
         self.assertIn("--kfile", t.calls[1])
+        self.assertEqual(t.calls[2][0], "calib.py")      # 予想の精度
 
     def test_motorはkfileとrawを渡す(self):
         t = self.Fake(v22="/boat/v22")
