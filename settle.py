@@ -60,6 +60,7 @@ def band_th(date, pick):
         if (date or "") >= start:
             return tbl.get(pick.get("rule"), PQ_MIN)
     return PQ_MIN
+MAXR1 = 1.054          # select_rule.MAXR1 と同じ。1着の差で帯を見送る境目（§27）
 PQ_ANA = 1.15          # 穴側(試験)のしきい値。select_rule.ANA_PQ_MIN と同じ
                        # ★2026-09-20 に 1.097 から変更。それ以前の記録を
                        #   混ぜて数えると基準が揃わないので注意
@@ -214,7 +215,11 @@ def main():
                     od = rm.get((p["jcd"], p["rno"]))
                     if od:
                         drift(p, od, PQ_ANA)
-        if not pend and not apend:
+        # ★1着の差が小さくて見送った帯の組（select_rule.MAXR1）。記録だけ。
+        #   前のルールなら買っていたぶんなので、帯とも穴側とも混ぜずに数える
+        hpend = [r["held"] for r in day.get("races") or []
+                 if r.get("held") and r["held"].get("hit") is None]
+        if not pend and not apend and not hpend:
             continue
         km = kmap(args.kfile, day["date"])
         if km is None:
@@ -252,6 +257,17 @@ def main():
             p["hit"] = bool(won)
             p["ret"] = pay if won else 0.0
             afilled += 1
+        for r in day.get("races") or []:
+            hd = r.get("held")
+            if not hd or hd.get("hit") is not None:
+                continue
+            got = km.get((r["jcd"], r["rno"]))
+            if not got:
+                continue
+            combo, pay = got
+            hd["combo"], hd["pay"] = combo, pay
+            hd["hit"] = combo in hd["buys"]
+            hd["ret"] = pay if hd["hit"] else 0.0
 
     with open(SITE, "w", encoding="utf-8") as f:
         json.dump(h, f, ensure_ascii=False)
@@ -307,6 +323,20 @@ def main():
                   "  ★通知も投票もしていない記録だけの数字")
             print("  ★的中50本を超えるまでは判定しない（ana_howto.md §8 の事前登録）。"
                   "1.097 時代の 153.6% は別ルールの数字なので比べないこと")
+
+    # --- 1着の差で見送った帯（記録のみ）。★帯の成績とは混ぜない ---
+    held = [r["held"] for d in (h.get("days") or [])
+            for r in (d.get("races") or []) if r.get("held")]
+    hdone = [x for x in held if x.get("hit") is not None]
+    if held:
+        hcost = sum(len(x["buys"]) for x in hdone) * 100
+        hret = sum(x.get("ret") or 0 for x in hdone)
+        print(f"\n1着の差で見送った帯（記録のみ / p/q最大 < {MAXR1}） "
+              f"{len(held)}レース {sum(len(x['buys']) for x in held)}点 / 確定 {len(hdone)}レース")
+        if hcost:
+            print(f"  的中 {sum(1 for x in hdone if x['hit'])}  "
+                  f"回収率 {hret/hcost*100:.1f}%  収支 {hret-hcost:+,.0f}円"
+                  "  ★前のルールなら買っていたぶん。判定は bt_snap.py で（band_howto.md §27）")
 
     # --- オッズの目減り ---
     mv = [b["move"] for p in picks for b in (p.get("buys") or [])

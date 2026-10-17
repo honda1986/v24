@@ -367,8 +367,12 @@ KEEP_DETAIL_DAYS = 14      # 全レースの内訳を残す日数（履歴が膨
 
 
 def site_race(date, place, jcd, rno, close, status, wave, wind,
-              lanes=None, p1=None, q1=None, npt=0, nmot=None, top=None):
+              lanes=None, p1=None, q1=None, npt=0, nmot=None, top=None,
+              held=None, r1=None, left=None):
     """見たレースを全部残す（買い目が出なかったものも）。
+
+    held: 1着の差が小さくて見送った帯の組（select_rule.MAXR1）。
+          前のルールならここで買っていた。最初の回のものだけ残す。
 
     ★波・風で切ったレースはオッズを取っていないので、モデルの確率が無い。
       その場合は理由と気象だけ。これは仕組み上の限界で、全レースで
@@ -392,6 +396,11 @@ def site_race(date, place, jcd, rno, close, status, wave, wind,
            "npt": npt}
     if top:
         rec["top"] = top
+    if r1 is not None:
+        rec["r1"] = round(float(r1), 4)      # 1着の p/q の最大（MAXR1 と比べた値）
+    if held:
+        rec["held"] = {"buys": list(held), "left": left,
+                       "r1": None if r1 is None else round(float(r1), 4)}
     if lanes and p1 is not None and q1 is not None:
         rec["lanes"] = [{
             "lane": x["lane"], "name": x.get("name") or "",
@@ -410,6 +419,10 @@ def site_race(date, place, jcd, rno, close, status, wave, wind,
     RANK = {"買い": 2, "穴のみ": 1}
     old_rec = next((r for r in races
                     if r["jcd"] == jcd and r["rno"] == rno), None)
+    # ★見送った帯の組は最初の回のものを残す。前のルールはそこで買って、
+    #   そのレースは二度と見なかった。あとの回で上書きすると比べられない
+    if old_rec is not None and old_rec.get("held"):
+        rec["held"] = old_rec["held"]
     if old_rec is not None and RANK.get(old_rec.get("status"), 0) > RANK.get(status, 0):
         # 内訳と出やすい順だけ新しいものに差し替えて、状態(と点数)は残す
         # ★ここで return してはいけない。下の保存まで進めないと書かれない
@@ -419,6 +432,10 @@ def site_race(date, place, jcd, rno, close, status, wave, wind,
             old_rec["top"] = top
         if nmot is not None:      # ★None で上書きすると §23 の検算材料が消える
             old_rec["nmot"] = nmot
+        if "r1" in rec:
+            old_rec["r1"] = rec["r1"]
+        if rec.get("held"):
+            old_rec["held"] = rec["held"]
     else:
         races[:] = [r for r in races
                     if not (r["jcd"] == jcd and r["rno"] == rno)]
@@ -824,12 +841,21 @@ def main():
         #     試験ルールに先を越されてはいけない。
         if f"{jcd}-{rno}" in done:
             buy, buy_alt = [], None      # 帯はもう通知済み。二重に出さない
+        # ★1着の差が小さいレースは帯を見送る（select_rule.MAXR1、band_howto.md §27）。
+        #   見送った組は held に残す（前のルールなら何を買っていたか。あとで比べる）。
+        #   done には入れない。次の回で 1着の差が開けば、そこで買う
+        #   （bt_snap.py の「p/q最大の足切り」と同じ作り）。
+        r1_pass, r1 = SR.r1_ok(p1, q1)
+        held = []
+        if buy and not r1_pass:
+            held, buy = buy, []
         buy_ana = []
         # ★穴側は従来の足切り(ana_ok)のまま。帯が波・風を外したあとも、
         #   登録した母集団を変えない（ana_howto.md §8 の事前登録）。
         if (ana_on and f"{jcd}-{rno}a" not in done
                 and SR.ana_ok(jcd, wave, wind)):
-            picked = set(buy)
+            # ★見送った帯の組も除く。穴側の母集団を足切りで変えないため
+            picked = set(buy) | set(held)
             buy_ana = [i for i in SR.pick_ana(q, cp, odds) if i not in picked]
         if not buy and f"{jcd}-{rno}" not in done:
             # ★帯の見送り内訳は、穴側が出たかどうかと関係なく数える。
@@ -838,16 +864,22 @@ def main():
             #   混ぜると、モデルが丸ごと落ちた日が「買い目が出なかった普通の日」
             #   に見えてしまい、気づけない。
             skip("補正モデルが読めない" if (th is None and not base_ok)
+                 else "1着の差が小さい" if held
                  else "帯の外／p/q不足")
+        held_c = [F.COMBOS[i] for i in held] or None
+        if held:
+            print(f"  {tag} 帯を見送り(1着の差が小さい p/q最大 {r1:.3f} < {SR.MAXR1})  "
+                  + " ".join(held_c) + f"  波{wave:.0f}cm 風{wind:.0f}m")
         if not buy and not buy_ana:
-            print(f"  {tag} "
-                  + ("穴側も出ず(帯は通知済み)" if f"{jcd}-{rno}" in done
-                     else "買い目なし")
-                  + f"  波{wave:.0f}cm 風{wind:.0f}m")
+            if f"{jcd}-{rno}" in done:
+                print(f"  {tag} 穴側も出ず(帯は通知済み)  波{wave:.0f}cm 風{wind:.0f}m")
+            elif not held:
+                print(f"  {tag} 買い目なし  波{wave:.0f}cm 風{wind:.0f}m")
             if not args.dry:
                 site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net, "買い目なし",
                           wave, wind, lanes, p1, q1, nmot=nmot,
-                          top=top_combos(cp, q, odds))
+                          top=top_combos(cp, q, odds),
+                          held=held_c, r1=r1, left=left)
             continue
         if buy:
             print(f"  {tag} ★{len(buy)}点  波{wave:.0f}cm 風{wind:.0f}m  "
@@ -899,7 +931,7 @@ def main():
             site_race(date, VENUE.get(jcd, str(jcd)), jcd, rno, net,
                       "買い" if ok else "穴のみ",
                       wave, wind, lanes, p1, q1, npt=len(buy) if ok else 0,
-                      nmot=nmot, top=tops)
+                      nmot=nmot, top=tops, held=held_c, r1=r1, left=left)
     # ★記録だけ：買い終えたレースも、締切までオッズを残す（band_howto.md §22）。
     #   買ったら二度と見ない作りだと、「締切に近い回だけで判定したら」を
     #   公平に比べられない（早く買えたレースの遅い回が抜けて偏る）。
