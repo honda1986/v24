@@ -146,6 +146,7 @@ table.grid th.v{text-align:right;white-space:nowrap;font-family:var(--sans);
      border:1px solid var(--line);border-radius:6px;padding:3px 7px;background:#0C1416}
 .buy.won{border-color:var(--good);background:rgba(95,192,139,.14);color:var(--good)}
 .buy.anab{border-color:rgba(143,178,255,.45)}
+.buy.held{border-style:dashed;opacity:.8}
 .buy .pq{color:var(--accent);font-size:10px;margin-left:5px}
 .buy .mv{font-size:10px;margin-left:5px}
 .buy .mv.up{color:var(--good)} .buy .mv.dn{color:var(--bad)}
@@ -419,7 +420,7 @@ h2{font-size:13px;margin:0 0 10px;color:var(--accent);font-weight:900;
 // ★穴側のしきい値を 1.097 → 1.15 に変え、窓を 4〜15分に狭めた日。
 //   これ「以前」の記録は別ルールの成績なので混ぜない（ana_howto.md §9）。
 const ANA_AFTER = "20260921";
-const SKIP_ORDER = ["淡水","波・風","帯の外／p/q不足","補正モデルが読めない","データ欠"];
+const SKIP_ORDER = ["淡水","波・風","帯の外／p/q不足","1着の差が小さい","補正モデルが読めない","データ欠"];
 const WD = ["日","月","火","水","木","金","土"];
 
 const yen = n => (n<0?"−":"") + "¥" + Math.abs(Math.round(n)).toLocaleString("ja-JP");
@@ -526,6 +527,29 @@ function metaOf(r, p, isAna){
   const nm = r.nmot != null ? r.nmot : (p && p.nmot);
   if(nm != null && nm < 3) m.appendChild(el("span", null, `モーター純度 ${nm}/6艇（節初日）`));
   return m;
+}
+
+// ★1着の差が小さくて見送った帯の組（select_rule.MAXR1、band_howto.md §27）。
+//   前のルールなら買っていた組。通知も投票もしていない記録だけ
+const MAXR1 = 1.054;
+function heldOf(r){
+  const h = r.held, box = el("div");
+  const lab = el("div","meta");
+  lab.appendChild(el("span","badge","見送り（1着の差が小さい）"));
+  lab.appendChild(el("span", null,
+    `1着の p/q の最大 ${h.r1 != null ? Number(h.r1).toFixed(3) : "—"}（${MAXR1} 未満は買わない）`));
+  if(h.left != null) lab.appendChild(el("span", null, `締切${h.left}分前`));
+  box.appendChild(lab);
+  const bs = el("div","buys");
+  for(const c of (h.buys || []))
+    bs.appendChild(el("span", "buy held" + (h.combo && c === h.combo ? " won" : ""), c));
+  box.appendChild(bs);
+  const m = el("div","meta");
+  m.appendChild(el("span", null, "前のルールなら買っていた組（記録のみ）"));
+  if(h.combo) m.appendChild(el("span", null,
+    `結果 ${h.combo}  ` + (h.hit ? `買っていれば的中（払戻 ${yen(h.pay||0)}）` : "買っていても不的中")));
+  box.appendChild(m);
+  return box;
 }
 
 function laneTable(r){
@@ -802,7 +826,7 @@ function raceRow(r){
   if(a) s.appendChild(el("span","badge ana", `穴 ${(a.buys||[]).length}点`));
   if(!p && !a) s.appendChild(el("span",
       "badge " + (r.kind === "cut" || r.kind === "nodata" ? r.kind : ""),
-      KIND_LABEL[r.kind]));
+      r.held && r.kind === "none" ? "見送り（1着の差）" : KIND_LABEL[r.kind]));
   for(const x of [p, a]){
     if(!x) continue;
     if(x.hit === true) s.appendChild(el("span","badge hit", `的中 ${yen(x.ret)}`));
@@ -826,6 +850,7 @@ function raceRow(r){
     body.appendChild(metaOf(r, a, true));
   }
   if(!p && !a) body.appendChild(metaOf(r, null, false));
+  if(r.held) body.appendChild(heldOf(r));
 
   // ★買い目が無いレースこそ内訳を見たい。開いたら table がすぐ出る
   if(r.lanes && r.lanes.length) body.appendChild(laneTable(r));

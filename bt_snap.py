@@ -25,7 +25,10 @@ bt.py は「確定オッズで選んで、確定オッズで払う」。本番�
 ★ここの結果を見てしきい値を動かさないこと（band_howto.md §6-4）。
 
 ★事前登録（2026-10-17、band_howto.md §27）:
-  「1着の p/q の最大が MAXR1(1.054) 未満のレースは見送る」を、2026-10-13 以降のデータで本番の作り方と比べる。
+  「1着の p/q の最大が MAXR1(1.054) 未満のレースは見送る」を、2026-10-13 以降のデータで前の作り方と比べる。
+  ★2026-10-18 から本番はこちら（select_rule.MAXR1）。下の出力では
+    「前の本番」= 足切りなし（A）、「いまの本番」= 足切りあり（MR）。
+    10/18 以降の本番の買い目は MR と、それより前は A と照合する。
 ★事前登録（2026-10-12、band_howto.md §22）:
   「締切 LATE(5)分前以降の回だけで判定する」と本番の作り方を、
   **2026-10-13 以降のデータだけで**比べる（--from 20261013）。
@@ -52,7 +55,8 @@ import third as T               # noqa: E402
 
 BET = 100
 LATE = 5            # 事前登録した「締切に近い回だけ」の境目（分）。変えないこと
-MAXR1 = 1.054       # 事前登録（§27）: 1着の p/q の最大がこれ未満のレースは見送る。変えないこと
+MAXR1 = SR.MAXR1    # 事前登録（§27）: 1着の p/q の最大がこれ未満のレースは見送る。変えないこと
+LIVE_MR = 20261018  # この日から本番の買い目は MR
 
 
 def load_snaps(d, frm=0, to=99999999):
@@ -180,6 +184,8 @@ def main():
             if buy and not mr_done and M.r1 >= MAXR1:
                 mr_done = True
                 MR += [(d, pay_of(i), od[i], q[i], i == hit) for i in buy]
+                if d >= LIVE_MR:
+                    mine[key] = {F.COMBOS[i] for i in buy}
             if buy and not late_done and left is not None and left <= LATE:
                 late_done = True
                 L += [(d, pay_of(i), od[i], q[i], i == hit) for i in buy]
@@ -187,7 +193,8 @@ def main():
                 per_left.setdefault(left, []).append((d, pay_of(i), od[i], q[i], i == hit))
             if buy and not bought:
                 bought = True
-                mine[key] = {F.COMBOS[i] for i in buy}
+                if d < LIVE_MR:
+                    mine[key] = {F.COMBOS[i] for i in buy}
                 A += [(d, pay_of(i), od[i], q[i], i == hit) for i in buy]
             if not ana_done and SR.ana_ok(mt["jcd"], mt["wave"], mt["wind"]):
                 ab = [i for i in SR.pick_ana(q, cp, list(od)) if i not in set(buy)]
@@ -199,13 +206,14 @@ def main():
         B += [(d, pay_of(i), od_f[i], q[i], i == hit) for i in SR.pick(q, cp, SR.PQ_MIN_GH)]
 
     print(f"\n照合できたレース {nr:,}（淡水を除く）  帯 p/q > {SR.PQ_MIN_GH}")
-    print("\n【判定時オッズで選ぶ＝本番と同じ条件】")
+    print("\n【判定時オッズで選ぶ＝本番と同じ条件】前の本番（1着の差の足切りなし、〜10/17）")
     summary("帯", A)
     print("\n【確定オッズで選ぶ＝従来の bt.py と同じ条件（同じレース）】")
     summary("帯", B)
     print(f"\n【事前登録の比較】締切{LATE}分前以降の回だけで判定（2026-10-13 以降で判定すること）")
     summary(f"帯・{LATE}分前以降", L)
-    print(f"\n【事前登録の比較】1着の p/q の最大が {MAXR1} 未満のレースは見送る（2026-10-13 以降で判定すること）")
+    print(f"\n【事前登録の比較】いまの本番（10/18〜）: 1着の p/q の最大が {MAXR1} 未満のレースは見送る"
+          "（2026-10-13 以降で判定すること）")
     summary("帯・p/q最大の足切り", MR)
     print("\n【穴側（判定時オッズ、記録のみのルール）】")
     summary("穴側", ANA)

@@ -103,7 +103,10 @@ def main():
     recent = []
     for i in range(ZERO_DAYS):
         d = (datetime.strptime(date, "%Y%m%d") - timedelta(days=i)).strftime("%Y%m%d")
-        recent.append(len((days.get(d) or {}).get("picks") or []))
+        # ★1着の差で見送った帯（§27）も「帯が出た」に数える。モデルは動いている
+        recent.append(len((days.get(d) or {}).get("picks") or [])
+                      + sum(1 for r in (days.get(d) or {}).get("races") or []
+                            if r.get("held")))
 
     # ★結果が何日も入っていないことに気づけるようにする（2026-09-22 追加）。
     #   定期実行を GitHub から PC に移したとき boat_motor の登録が漏れ、
@@ -130,6 +133,11 @@ def main():
         # ★穴側(試験)は帯とは別勘定。足し合わせて出さない（メモ §41）
         lines.append(f"穴側(試験) {len(ana)}レース "
                      f"{sum(len(p.get('buys') or []) for p in ana)}点")
+    held = [r["held"] for r in races if r.get("held")]
+    if held:
+        # ★1着の差で見送った帯（記録のみ、band_howto.md §27）。帯とは別勘定
+        lines.append(f"1着の差で見送り {len(held)}レース "
+                     f"{sum(len(x.get('buys') or []) for x in held)}点（記録のみ）")
     lines += [f"見たレース {looked}（重複を除いた実数）",
               f"実行 {runs}回（最後 {last}）"]
     if mdate:
