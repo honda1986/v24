@@ -449,7 +449,7 @@ class TestWorkflows(unittest.TestCase):
         return "\n".join(out)
 
     def test_PCに移した3つは定期で動かない(self):
-        for name in ("yosou.yml", "motor.yml", "prefetch.yml"):
+        for name in ("motor.yml", "prefetch.yml"):
             block = self.on_block(name)
             self.assertNotIn(
                 "schedule:", block,
@@ -457,6 +457,17 @@ class TestWorkflows(unittest.TestCase):
                 "PC と両方が定期で動くと二重通知・二重投票になる")
             self.assertIn("workflow_dispatch:", block,
                           f"{name} の手動起動が無い（予備運転ができない）")
+
+    def test_yosouの定期は必ず引き継ぎを通る(self):
+        # ★2026-11-04 から yosou.yml は10分おきに起きるが、PC が動いていれば
+        #   standby.py --check で何もせずに終わる。yosou.py を直に回すと
+        #   PC と二重に通知するので、本体は standby.py からしか呼ばない
+        path = os.path.join(V24, ".github", "workflows", "yosou.yml")
+        text = io.open(path, encoding="utf-8").read()
+        self.assertIn("workflow_dispatch:", self.on_block("yosou.yml"))
+        self.assertIn("standby.py --check", text)
+        self.assertNotIn("python yosou.py", text)
+        self.assertNotIn("python runner.py", text)
 
     def test_見張りと夜の集計は残っている(self):
         for name in ("watchdog.yml", "daily.yml"):

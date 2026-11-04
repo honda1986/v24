@@ -46,6 +46,16 @@ JST = timezone(timedelta(hours=9), "JST")
 DATA_DIRS = ("state", "cache", "motor", "before", "odds_snap", "stats")
 DATA_FILES = ("history.json",)
 
+# ★PC と GitHub の引き継ぎ（2026-11-04、pc/README.md §5）
+#   どちらも動くたびに state/alive_<host>.json に「最後に動いた時刻」を残す。
+#   ・GitHub（standby.py）は PC の心拍が PC_STALE_MIN 分より古いときだけ代わりに回し、
+#     PC の心拍が新しくなったら止まる
+#   ・PC は GitHub が回している（active で HANDOVER_MIN 分以内）あいだ予想をせず、
+#     心拍だけ残して待つ
+#   どの瞬間も、予想と通知をするのは片方だけになる。
+PC_STALE_MIN = 15
+HANDOVER_MIN = 8
+
 
 def now_jst():
     return datetime.now(JST)
@@ -160,6 +170,11 @@ def integrate(tmp, repo, log=print):
             if d == "state" and name.startswith("notified_") and os.path.isfile(t):
                 if union_notified(s, t, t):
                     continue          # 足し合わせた。上書きはしない
+            # ★心拍は新しいほうを残す。手元の「相手の心拍」は取り込んだ時点の
+            #   古い写しなので、ローカル優先で上書きすると相手の最新を消してしまう
+            if d == "state" and name.startswith("alive_") and os.path.isfile(t):
+                if (load_json(t, {}) or {}).get("t", "") >= (load_json(s, {}) or {}).get("t", ""):
+                    continue
             shutil.copy2(s, t)
 
     mine = os.path.join(tmp, "history.json")
@@ -256,6 +271,42 @@ def save(repo, message, log=print, push=True):
         return "push できず"
     log("  push しました")
     return "push"
+
+
+# --------------------------------------------------------------------------
+# 心拍（PC と GitHub の引き継ぎ）
+# --------------------------------------------------------------------------
+def alive_path(repo, host):
+    return os.path.join(repo, "state", f"alive_{host}.json")
+
+
+def read_alive(repo, host):
+    return load_json(alive_path(repo, host), {}) or {}
+
+
+def touch_alive(repo, host, **extra):
+    """state/alive_<host>.json に「いま動いた」を残す（extra は motor=日付 など）"""
+    a = read_alive(repo, host)
+    a.update(extra)
+    a["t"] = now_jst().isoformat(timespec="seconds")
+    save_json(alive_path(repo, host), a)
+    return a
+
+
+def alive_minutes(a, now=None):
+    """心拍が何分前か。無ければ None"""
+    try:
+        t = datetime.fromisoformat(a["t"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return ((now or now_jst()) - t).total_seconds() / 60
+
+
+def gh_running(repo, now=None):
+    """GitHub の予備運転がいま回っているか（PC はそのあいだ予想しない）"""
+    a = read_alive(repo, "gh")
+    m = alive_minutes(a, now)
+    return bool(a.get("active")) and m is not None and m < HANDOVER_MIN, m
 
 
 # --------------------------------------------------------------------------
@@ -435,6 +486,7 @@ def main(argv=None):
     ap.add_argument("--timeout", type=int, default=None, help="打ち切りの秒数")
     ap.add_argument("--dry", action="store_true", help="yosou を通知せずに動かす")
     ap.add_argument("--no-push", dest="push", action="store_false", default=True)
+    ap.add_argument("--host", default="pc", help="心拍の名前（PC は pc のまま）")
     args = ap.parse_args(argv)
 
     repo = os.path.abspath(args.repo)
@@ -458,12 +510,23 @@ def main(argv=None):
         task = Task(repo, python=args.python, v22=os.path.abspath(args.v22),
                     dry=args.dry, timeout=timeout, log=log)
         onto_remote(repo, log)              # 予備運転のぶんを取り込む
+        touch_alive(repo, args.host)
+        # ★GitHub が予備運転しているあいだは予想しない（二重通知・二重投票を防ぐ）。
+        #   心拍だけ push すれば GitHub が気づいて止まり、次の周から PC が回す
+        running, m = gh_running(repo)
+        if args.task == "yosou" and args.host == "pc" and running:
+            log(f"  GitHub が予備運転中です（{m:.0f}分前）。止まるのを待つので、"
+                "この回は予想しません")
+            save(repo, f"alive: {now_jst():%H%M}", log, push=args.push)
+            return 0
         try:
             message = getattr(task, args.task)()
         except Exception as e:
             log(f"★{type(e).__name__}: {e}")
             save(repo, f"{args.task}(途中まで): {now_jst():%H%M}", log, push=args.push)
             return 1
+        if args.task in ("motor", "prefetch"):    # 予備運転が「今日はもう済んだ」と分かるように
+            touch_alive(repo, args.host, **{args.task: now_jst().strftime("%Y%m%d")})
         save(repo, message, log, push=args.push)
         log(f"=== {args.task} 終わり ===")
     return 0

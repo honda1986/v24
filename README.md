@@ -76,6 +76,7 @@ v23 は取れなくても予想が出てしまい、ログを見ないと気づ�
 | `collect_before.py` | 直前情報を1日1ファイルで貯める。**今日から始めること** |
 | `selftest.py` | ネットに出ずに計算の筋道を確認する |
 | `calib.py` | 予想の精度（予想した確率どおりに当たっているか）を日別に集計して `stats/calib.json` へ。毎朝 runner が回す。モデルと市場を同じレースで並べる |
+| `standby.py` | PC が止まっているあいだ GitHub Actions で代わりに予想を回す（予備運転）。PC の心拍 `state/alive_pc.json` が15分より古いときだけ引き継ぎ、PC が戻ったら止まる（`pc/README.md` §5） |
 | `index.html` | 予想サイト。6艇の内訳に**根拠**（オッズの見立てから上げ下げした要因。`features.explain`）、通算成績に**予想の精度** |
 
 ---
@@ -170,7 +171,7 @@ v23 は取れなくても予想が出てしまい、ログを見ないと気づ�
 - Secrets に `NTFY_TOPIC` を入れる
 - Actions の書き込み権限を有効にする（`state/` と `cache/` を commit するため）
 - `.github/workflows/motor.yml` … 1日1回 6:00 JST。モーター純度を作る
-- `.github/workflows/yosou.yml` … 10分ごと。1ジョブ内で3分おきに3回まわす
+- `.github/workflows/yosou.yml` … 10分ごとに起きて、PC が止まっているときだけ代わりに回す（`standby.py`。引き継ぎの決まりは `pc/README.md` §5）
 
 ### 4. ★ 本番投入の前に必ず確かめること
 
