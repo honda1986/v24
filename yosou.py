@@ -34,6 +34,7 @@ import features as F
 import official as OF
 import beforeinfo as BI
 import racecard as RC
+import officialcard as OC
 import select_rule as SR
 import second as SEC
 import third as THI
@@ -474,7 +475,7 @@ def site_run(date):
     _save(SITE, h)
 
 
-def racecard(date, jcd, rno):
+def racecard(date, jcd, rno, official=True):
     """出走表。1レース1回だけ取り、cache に残す。
 
     ★info.kyotei.fun は GitHub Actions から時々まったく届かない（実測。
@@ -487,14 +488,37 @@ def racecard(date, jcd, rno):
       朝の値をそのまま使ってよい。展示タイムだけは朝には無いが、
       それは直前情報から補う（main を参照）。
     """
+    global _KF_DOWN
     path = f"{CACHE_DIR}/rc_{date}_{jcd:02d}_{rno}.json"
     c = _load(path)
     if c and len(c) == 6:
         return c
-    rc = RC.fetch_racecard(date, jcd, rno)
+    rc = None if _KF_DOWN else RC.fetch_racecard(date, jcd, rno)
     if rc and len(rc) == 6:
         _save(path, rc)
+        return rc
+    # ★取れなければ公式（boatrace.jp）の出走表で代える（2026-11-04）。
+    #   info.kyotei.fun は GitHub Actions からまったく届かない日がある（11/4 は全滅）。
+    #   公式は 級別・年齢・平均ST・全国・モーター・ボートが info.kyotei.fun と一致し、
+    #   体重・F数・当地勝率・当地2連率の4つだけ定義が違う（cardcheck.py、2026-08-22）。
+    #   4つを入れ替えても 3連単の確率のずれは中央値0.0009、帯の買い目は
+    #   99レース中88レースで同じ（2026年10月、1,790レース）。レースを丸ごと
+    #   落とすよりずっとよいので、届かないときだけ使う。
+    #   1回届かなければ、この回のあいだは info.kyotei.fun を飛ばす（1件25秒待つため）
+    _KF_DOWN = True
+    if not official:          # prefetch は info.kyotei.fun のぶんだけ先取りする
+        return rc
+    oc = OC.fetch_card(date, jcd, rno)
+    if oc and len(oc) == 6 and all(x.get("n_win") is not None for x in oc):
+        for x in oc:
+            x["src"] = "official"
+        print(f"    公式の出走表で代えました（{jcd:02d}場 {rno}R）")
+        _save(path, oc)
+        return oc
     return rc
+
+
+_KF_DOWN = False       # この回のあいだ info.kyotei.fun が届かないと分かったら True
 
 
 def build_lanes(rc, page, jcd, rno, motor):

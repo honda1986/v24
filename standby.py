@@ -18,7 +18,8 @@ yosou.yml が10分おきに起こす。PC が動いていれば --check で数�
   4. 止まるとき（PC が戻った / 時間切れ）は active を下ろして push する
 
 予想・保存は runner.py と同じもの（取り込み → 本体 → 統合して push）を使う。
-PC の朝の仕事（motor・prefetch）も、その日まだ誰もやっていなければ1回だけやる。
+PC の朝の仕事のうち motor（モーター純度・結果の取り込み）も、その日まだ誰も
+やっていなければ1回だけやる。
 """
 import argparse
 import json
@@ -100,7 +101,10 @@ def motor_light(task):
 def chores(repo, task, log):
     """朝の仕事。その日まだ PC も GitHub もやっていなければ1回だけ"""
     today = R.now_jst().strftime("%Y%m%d")
-    for name, run in (("motor", motor_light), ("prefetch", lambda t: t.prefetch())):
+    # ★prefetch はやらない。予備運転では info.kyotei.fun が届かないことが多く、
+    #   そのとき全レースを公式から取ると30分近く予想が止まる。
+    #   窓に入ったレースは yosou.racecard が1件ずつ公式で代える
+    for name, run in (("motor", motor_light),):
         if any(R.read_alive(repo, h).get(name) == today for h in ("pc", "gh")):
             continue
         log(f"--- 今日の {name} がまだなので代わりにやります ---")

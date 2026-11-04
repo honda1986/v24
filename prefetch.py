@@ -43,7 +43,8 @@ def main():
                 have += 1
                 n_ok += 1
                 continue
-            rc = Y.racecard(date, jcd, rno)
+            # ★公式での代わりはしない（全レース分だと30分近くかかる）。窓の中で yosou が代える
+            rc = Y.racecard(date, jcd, rno, official=False)
             time.sleep(args.gap)
             if rc and len(rc) == 6:
                 got += 1
