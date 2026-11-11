@@ -79,6 +79,7 @@ v23 は取れなくても予想が出てしまい、ログを見ないと気づ�
 | `standby.py` | PC が止まっているあいだ GitHub Actions で代わりに予想を回す（予備運転）。PC の心拍 `state/alive_pc.json` が15分より古いときだけ引き継ぎ、PC が戻ったら止まる（`pc/README.md` §5） |
 | `oddsx.py` | 3連単以外の賭式（単勝・複勝・2連単・2連複・3連複・拡連複）のオッズを公式から読む（band_howto.md §30） |
 | `collect_odds.py` | 前日の3連単以外の賭式の確定オッズを `oddsx/` に貯める。毎朝 runner が回す（§30） |
+| `backfill_before.py` | 過去の直前情報（チルト・部品交換・展示進入・展示ST など）をさかのぼって `before_hist/` に貯める。GitHub の `backfill.yml` で8本同時に回す（band_howto.md §30-1） |
 | `index.html` | 予想サイト。6艇の内訳に**根拠**（オッズの見立てから上げ下げした要因。`features.explain`）、通算成績に**予想の精度** |
 
 ---

@@ -30,6 +30,24 @@ import official as OF
 OUTDIR = "before"
 
 
+def record(jcd, rno, info):
+    """beforeinfo.fetch の結果を1レースぶんの保存の形にする（backfill_before.py も使う）"""
+    return {"jcd": jcd, "rno": rno,
+            "tenji": {str(k): v for k, v in info["tenji"].items()},
+            "course_in": {str(k): v for k, v in info["course_in"].items()},
+            "exhibition_st": {str(k): v for k, v in info["exhibition_st"].items()},
+            "weight": {str(k): v for k, v in info["weight"].items()},
+            "weather": info["weather"],
+            # 水面基準の風向（w=5 追い風 / 13 向かい風、17 無風）と
+            # その場の水面の向き（band_howto.md §17-1）
+            "wind_w": info.get("wind_w"),
+            "venue_dir": info.get("venue_dir"),
+            # ★2026-11-11 から（band_howto.md §30）。チルト・プロペラ・部品交換・
+            #   調整重量・前走（その日の前のレースの R・進入・ST・着順）
+            **{k: {str(b): v for b, v in (info.get(k) or {}).items()}
+               for k in ("tilt", "propeller", "parts", "adj_weight", "prev")}}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", default=None)
@@ -54,21 +72,7 @@ def main():
             if not info or not info.get("tenji"):
                 miss += 1
                 continue
-            races.append({"jcd": jcd, "rno": rno,
-                          "tenji": {str(k): v for k, v in info["tenji"].items()},
-                          "course_in": {str(k): v for k, v in info["course_in"].items()},
-                          "exhibition_st": {str(k): v for k, v
-                                            in info["exhibition_st"].items()},
-                          "weight": {str(k): v for k, v in info["weight"].items()},
-                          "weather": info["weather"],
-                          # 水面基準の風向（w=5 追い風 / 13 向かい風、17 無風）と
-                          # その場の水面の向き（band_howto.md §17-1）
-                          "wind_w": info.get("wind_w"),
-                          "venue_dir": info.get("venue_dir"),
-                          # ★2026-11-11 から（band_howto.md §30）。チルト・プロペラ・部品交換・
-                          #   調整重量・前走（その日の前のレースの R・進入・ST・着順）
-                          **{k: {str(b): v for b, v in (info.get(k) or {}).items()}
-                             for k in ("tilt", "propeller", "parts", "adj_weight", "prev")}})
+            races.append(record(jcd, rno, info))
     if not races:
         print("取れませんでした")
         return

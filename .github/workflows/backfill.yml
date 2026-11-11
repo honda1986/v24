@@ -1,0 +1,45 @@
+name: backfill
+# 過去の直前情報をさかのぼって before_hist/ に貯める（band_howto.md §30、backfill_before.py）。
+# 手動で1回だけ動かす。8本を同時に走らせ、それぞれ 1秒に1ページ。
+# 途中で止まっても、もう一度動かせば取れていない日だけ取る。
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: "この日から（YYYYMMDD）"
+        default: "20230501"
+      to:
+        description: "この日まで（YYYYMMDD）"
+        default: "20261110"
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests beautifulsoup4
+      - name: v22 の raw（レースの一覧に使う）
+        uses: actions/checkout@v4
+        with:
+          repository: honda1986/v22
+          path: v22src
+          sparse-checkout: raw
+      - name: さかのぼって取る
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          git config user.name  github-actions
+          git config user.email github-actions@github.com
+          python backfill_before.py --from "${{ inputs.from }}" --to "${{ inputs.to }}" \
+            --shard ${{ matrix.shard }} --shards 8 --raw v22src/raw --budget 19800
