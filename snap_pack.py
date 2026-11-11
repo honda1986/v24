@@ -43,8 +43,10 @@ def pack(date):
         # ★既にあれば足し合わせる（同じ日を2回まとめても消えない）
         with gzip.open(out, "rt", encoding="utf-8") as f:
             old = json.load(f).get("rows") or []
-        seen = {(r["t"], r["jcd"], r["rno"]) for r in old}
-        rows = old + [r for r in rows if (r["t"], r["jcd"], r["rno"]) not in seen]
+        # ★"x" の行（3連単以外の賭式。§30）は3連単の行と同じ時刻でも別もの
+        key = lambda r: (r["t"], r["jcd"], r["rno"], "x" in r)
+        seen = {key(r) for r in old}
+        rows = old + [r for r in rows if key(r) not in seen]
     rows.sort(key=lambda r: (r["jcd"], r["rno"], r["t"]))
     os.makedirs(OUT, exist_ok=True)
     with gzip.open(out, "wt", encoding="utf-8") as f:
