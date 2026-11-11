@@ -8,6 +8,8 @@
   bt.py / train.py / settle.py はここを通して読む（band_howto.md §31）。
   ★raw24 の出走表は公式の値。体重・F数・当地勝率・当地2連率の4つは info.kyotei.fun と
     定義が違う（§30。入れ替えても帯の買い目は89%同じ）。
+  ★10/17〜10/19 の raw24 は officialcard を直す前の突き合わせ用（新人・初日の勝率がおかしい）。
+    v22 にある日なので読まれない。
 """
 import glob
 import gzip

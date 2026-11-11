@@ -58,6 +58,19 @@ def _rows(soup):
     return out
 
 
+def _cells(tb):
+    """艇の1行目の td（rowspan のある左側の列がここに並ぶ）"""
+    tr = tb.find("tr")
+    if not tr:
+        return []
+    return [re.sub(r"\s+", " ", td.get_text(" ", strip=True))
+            for td in tr.find_all("td", recursive=False)]
+
+
+def _nums(s):
+    return [float(x) for x in re.findall(NUM, s)]
+
+
 def parse(html):
     """枠番順6要素。取れなかった項目は None（既定値で埋めない）"""
     soup = BeautifulSoup(html, "html.parser")
@@ -82,26 +95,28 @@ def parse(html):
         m = re.search(r"(\d{2}(?:\.\d)?)\s*kg", t)
         if m:
             d["weight"] = float(m.group(1))
-        m = re.search(r"F\s*(\d+)", t)
-        if m:
-            d["f_count"] = int(m.group(1))
-        m = re.search(r"L\s*(\d+)", t)
-        if m:
-            d["l_count"] = int(m.group(1))
-        # F/L のあとに来る 0.xx が平均ST
-        m = re.search(r"L\s*\d+\s+(0?\.\d{2})", t)
-        if m:
-            d["avg_st"] = float(m.group(1))
-
-        # 平均STの後ろに 全国3個 → 当地3個 → モーター(番号+2個) → ボート(番号+2個)
-        tail = t[m.end():] if m else t
-        nums = re.findall(NUM, tail)
-        if len(nums) >= 14:
-            v = [float(x) for x in nums[:14]]
-            d["n_win"], d["n_2ren"] = v[0], v[1] / 100.0
-            d["l_win"], d["l_2ren"] = v[3], v[4] / 100.0
-            d["m_2ren"] = v[7] / 100.0          # v[6] はモーター番号
-            d["b_2ren"] = v[10] / 100.0         # v[9] はボート番号
+        cells = _cells(tb)
+        i = next((k for k, c in enumerate(cells) if re.match(r"F\s*\d+\s+L\s*\d+", c)), None)
+        if i is None:                          # 列の並びが変わった。数値は取らない
+            out.append(d)
+            continue
+        m = re.match(r"F\s*(\d+)\s+L\s*(\d+)\s*(\S*)", cells[i])
+        d["f_count"], d["l_count"] = int(m.group(1)), int(m.group(2))
+        # ★新人は平均STが「-」。文字列の続きで数えると全国勝率に枠番が入る（2026-11-11 発見）
+        #   「-」（まだ記録が無い）は info.kyotei.fun / v22 raw と同じ 0.0 にする（学習データがそうなっている）
+        st = re.fullmatch(r"\d?\.\d{2}", m.group(3))
+        d["avg_st"] = float(m.group(3)) if st else (0.0 if m.group(3) == "-" else None)
+        # 平均STの右に 全国(勝率 2連率 3連率) → 当地(同) → モーター(番号 2連率 3連率) → ボート(同)
+        nat, loc, mot, boat = (_nums(cells[i + k]) if i + k < len(cells) else []
+                               for k in (1, 2, 3, 4))
+        if len(nat) == 3:
+            d["n_win"], d["n_2ren"] = nat[0], nat[1] / 100.0
+        if len(loc) == 3:
+            d["l_win"], d["l_2ren"] = loc[0], loc[1] / 100.0
+        if len(mot) == 3:
+            d["m_2ren"] = mot[1] / 100.0      # mot[0] はモーター番号
+        if len(boat) == 3:
+            d["b_2ren"] = boat[1] / 100.0     # boat[0] はボート番号
         out.append(d)
     return out
 
