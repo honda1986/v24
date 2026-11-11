@@ -9,7 +9,8 @@ before/（2026-09-23〜）より前の分もそろえられる。
   python backfill_before.py --from 20230501 --to 20261110 --shard 0 --shards 8 --raw v22src/raw
 
   ・レースの一覧は v22 の raw から作る（一覧のためのリクエストは要らない）。淡水は取らない
-  ・日付を shards 個に振り分ける（k 番目の日 → k % shards）。8本並べれば8倍速い
+  ・日付を shards 個に振り分ける（k 番目の日 → k % shards）。さらに1本の中でも8ページ同時に取る
+    （公式は GitHub から1ページ8〜10秒かかるが、同時に取っても1件あたりは遅くならない）
   ・1日1ファイル before_hist/YYYYMMDD.json.gz。既にある日は飛ばす（やり直しても同じ）
   ・--every 日ぶんごとに commit して push（main。PC や予備運転とは別のフォルダ）
 ★before_hist/ は runner.py の DATA_DIRS に入れない。PC の取り込みは「手元優先」なので、
@@ -23,6 +24,7 @@ import os
 import random
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import beforeinfo as BI
 import collect_before as CB
@@ -42,11 +44,19 @@ def races_of(raw_dir, date):
                    if r.get("jcd") and r["jcd"] not in SR.TANSUI})
 
 
-def one_day(date, races, gap):
-    out, miss = [], 0
-    for jcd, rno in races:
+def one_day(date, races, gap, threads=1):
+    """★公式は GitHub から1ページ 8〜10秒かかる（2026-11-11 実測）。ただし同時に取っても
+    1件あたりは遅くならない（6本同時で 12件 20秒）。なので threads 本で並べる。
+    beforeinfo のセッションは同時8本までなので、threads は 8 以下にすること"""
+    def get(rc):
+        jcd, rno = rc
         info = BI.fetch(date, jcd, rno, tries=1)
         time.sleep(gap)
+        return jcd, rno, info
+    with ThreadPoolExecutor(max(1, threads)) as ex:
+        got = list(ex.map(get, races))
+    out, miss = [], 0
+    for jcd, rno, info in got:
         if not info or not info.get("tenji"):
             miss += 1
             continue
@@ -82,7 +92,8 @@ def main():
     ap.add_argument("--shards", type=int, default=1)
     ap.add_argument("--raw", default="../v22/raw")
     ap.add_argument("--gap", type=float, default=0.5, help="1リクエストの間隔(秒)")
-    ap.add_argument("--every", type=int, default=10, help="この日数ごとに push")
+    ap.add_argument("--every", type=int, default=5, help="この日数ごとに push")
+    ap.add_argument("--threads", type=int, default=8, help="同時に取る本数（8 まで）")
     ap.add_argument("--budget", type=int, default=19800, help="この秒数で切り上げる")
     ap.add_argument("--no-push", dest="do_push", action="store_false", default=True)
     args = ap.parse_args()
@@ -101,7 +112,7 @@ def main():
         races = races_of(args.raw, d)
         if not races:
             continue
-        out, miss = one_day(d, races, args.gap)
+        out, miss = one_day(d, races, args.gap, min(args.threads, 8))
         if out:
             with gzip.open(f"{OUTDIR}/{d}.json.gz", "wt", encoding="utf-8") as f:
                 json.dump({"date": d, "races": out}, f, ensure_ascii=False, separators=(",", ":"))
