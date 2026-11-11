@@ -33,15 +33,22 @@ import select_rule as SR
 OUTDIR = "before_hist"
 
 
-def races_of(raw_dir, date):
-    """v22 raw にあるその日のレース（淡水を除く）"""
-    p = f"{raw_dir}/{date}.json.gz"
-    if not os.path.exists(p):
-        return []
-    with gzip.open(p, "rt", encoding="utf-8") as f:
-        rd = json.load(f)
-    return sorted({(r["jcd"], r["rno"]) for r in rd.get("races") or []
-                   if r.get("jcd") and r["jcd"] not in SR.TANSUI})
+def races_of(raw_dir, date, kfile_dir=None):
+    """v22 raw にあるその日のレース（淡水を除く）。
+    ★raw が空の日（v22 の取り込みが失敗した日。2026-10-20 以降はずっと空）は
+      Kファイル（公式の結果）から取る"""
+    out = set()
+    for d, key in ((raw_dir, "races"), (kfile_dir, "races")):
+        p = f"{d}/{date}.json.gz" if d else None
+        if not p or not os.path.exists(p):
+            continue
+        with gzip.open(p, "rt", encoding="utf-8") as f:
+            rd = json.load(f)
+        out = {(r["jcd"], r["rno"]) for r in rd.get(key) or []
+               if r.get("jcd") and r["jcd"] not in SR.TANSUI}
+        if out:
+            break
+    return sorted(out)
 
 
 def one_day(date, races, gap, threads=1):
@@ -91,6 +98,7 @@ def main():
     ap.add_argument("--shard", type=int, default=0)
     ap.add_argument("--shards", type=int, default=1)
     ap.add_argument("--raw", default="../v22/raw")
+    ap.add_argument("--kfile", default=None, help="raw が空の日のレースの一覧に使う")
     ap.add_argument("--gap", type=float, default=0.5, help="1リクエストの間隔(秒)")
     ap.add_argument("--every", type=int, default=5, help="この日数ごとに push")
     ap.add_argument("--threads", type=int, default=8, help="同時に取る本数（8 まで）")
@@ -98,7 +106,8 @@ def main():
     ap.add_argument("--no-push", dest="do_push", action="store_false", default=True)
     args = ap.parse_args()
     t0 = time.time()
-    days = sorted(os.path.basename(p)[:8] for p in glob.glob(f"{args.raw}/*.json.gz"))
+    days = sorted({os.path.basename(p)[:8] for d in (args.raw, args.kfile) if d
+                   for p in glob.glob(f"{d}/*.json.gz")})
     days = [d for k, d in enumerate(d for d in days if args.frm <= d <= args.to)
             if k % args.shards == args.shard]
     todo = [d for d in days if not os.path.exists(f"{OUTDIR}/{d}.json.gz")]
@@ -109,7 +118,7 @@ def main():
         if time.time() - t0 > args.budget:
             print("持ち時間を使い切ったので、残りは次の回へ")
             break
-        races = races_of(args.raw, d)
+        races = races_of(args.raw, d, args.kfile)
         if not races:
             continue
         out, miss = one_day(d, races, args.gap, min(args.threads, 8))

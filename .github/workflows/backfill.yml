@@ -30,12 +30,14 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install numpy requests beautifulsoup4
-      - name: v22 の raw（レースの一覧に使う）
+      - name: v22 の raw と Kファイル（レースの一覧に使う。raw が空の日は Kファイル）
         uses: actions/checkout@v4
         with:
           repository: honda1986/v22
           path: v22src
-          sparse-checkout: raw
+          sparse-checkout: |
+            raw
+            kfile
       - name: さかのぼって取る
         env:
           PYTHONUTF8: "1"
@@ -43,4 +45,4 @@ jobs:
           git config user.name  github-actions
           git config user.email github-actions@github.com
           python backfill_before.py --from "${{ inputs.from }}" --to "${{ inputs.to }}" \
-            --shard ${{ matrix.shard }} --shards 10 --threads 8 --raw v22src/raw --budget 19800
+            --shard ${{ matrix.shard }} --shards 10 --threads 8 --raw v22src/raw --kfile v22src/kfile --budget 19800
