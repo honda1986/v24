@@ -43,7 +43,7 @@ from datetime import datetime, timedelta, timezone
 JST = timezone(timedelta(hours=9), "JST")
 
 # 取り込みと保存で面倒を見るもの。yosou.yml / motor.yml / prefetch.yml と同じ
-DATA_DIRS = ("state", "cache", "motor", "before", "odds_snap", "stats")
+DATA_DIRS = ("state", "cache", "motor", "before", "odds_snap", "stats", "oddsx")
 DATA_FILES = ("history.json",)
 
 # ★PC と GitHub の引き継ぎ（2026-11-04、pc/README.md §5）
@@ -450,6 +450,11 @@ class Task:
         for k in (3, 2, 1):
             d = (today - timedelta(days=k)).strftime("%Y%m%d")
             self.run_py("collect_before.py", "--date", d, check=False)
+        # ★3連単以外の賭式の確定オッズ（band_howto.md §30）。既にある日はすぐ戻る。
+        #   1日で約700リクエストかかるので、さかのぼるのは2日まで
+        for k in (2, 1):
+            d = (today - timedelta(days=k)).strftime("%Y%m%d")
+            self.run_py("collect_odds.py", "--date", d, check=False)
         if bad:
             raise bad
         return f"motor+settle: {now_jst():%Y%m%d}"

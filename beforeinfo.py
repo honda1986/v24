@@ -53,6 +53,59 @@ def _soup(url, timeout=15, min_len=3000, tries=2):
     return None
 
 
+def _empty():
+    return {"tenji": {}, "course_in": {}, "exhibition_st": {},
+            "weight": {}, "weather": {}, "wind_w": None, "venue_dir": None,
+            # ★2026-11-11 追加（band_howto.md §30）。見るのに手間がかかる情報で、まだ検証していない
+            "tilt": {}, "propeller": {}, "parts": {}, "adj_weight": {}, "prev": {}}
+
+
+def _columns(card):
+    """見出しの名前 → 1行目の td の位置（チルト・プロペラ・部品交換）"""
+    th = card.find("thead") if card else None
+    tr = th.find("tr") if th else None
+    if tr is None:
+        return {}
+    return {_norm(c.get_text()): i for i, c in enumerate(tr.find_all(["th", "td"], recursive=False))}
+
+
+def _extra(out, lane, tb, tds, col):
+    """チルト・プロペラ・部品交換・調整重量・前走（その節の前のレース）。
+    取れない項目は入れない（既定値で埋めない）"""
+    def cell(name):
+        i = col.get(name)
+        return tds[i] if i is not None and i < len(tds) else None
+    c = cell("チルト")
+    if c is not None:
+        m = re.fullmatch(r"-?\d+(?:\.\d+)?", _norm(c.get_text()))
+        if m:
+            out["tilt"][lane] = float(m.group(0))
+    c = cell("プロペラ")
+    if c is not None:
+        out["propeller"][lane] = _norm(c.get_text())          # 空 = 交換なし（「新」など）
+    c = cell("部品交換")
+    if c is not None:
+        out["parts"][lane] = [_norm(li.get_text()) for li in c.find_all("li") if _norm(li.get_text())]
+    rows = tb.find_all("tr")
+    if len(rows) >= 3:                                         # 体重の下の段が調整重量
+        r2 = rows[2].find_all("td", recursive=False)
+        if r2:
+            m = re.fullmatch(r"\d+(?:\.\d+)?", _norm(r2[0].get_text()))
+            if m:
+                out["adj_weight"][lane] = float(m.group(0))
+    prev = {}
+    for tr in rows:                                            # 「R / 進入 / ST / 着順」と値の組
+        cs = tr.find_all("td", recursive=False)
+        for a, b in zip(cs, cs[1:]):
+            key = {"R": "r", "進入": "course", "ST": "st", "着順": "chaku"}.get(_norm(a.get_text()))
+            if key and key not in prev:
+                v = _norm(b.get_text())
+                if v:
+                    prev[key] = int(v) if key in ("r", "course") and v.isdigit() else v
+    if prev:
+        out["prev"][lane] = prev
+
+
 def _closest_class(node, cls):
     p = node
     while p is not None and getattr(p, "get", None) is not None:
@@ -87,15 +140,14 @@ def _start_timing(row):
 def fetch(date, jcd, rno, tries=2):
     """直前情報。取れなかった項目は空のまま返す。"""
     url = f"{BASE}/beforeinfo?rno={rno}&jcd={jcd:02d}&hd={date}"
-    best = {"tenji": {}, "course_in": {}, "exhibition_st": {},
-            "weight": {}, "weather": {}, "wind_w": None, "venue_dir": None}
+    best = _empty()
     for attempt in range(max(1, tries)):
         soup = _soup(url)
         if soup is None:
             continue
-        out = {"tenji": {}, "course_in": {}, "exhibition_st": {},
-               "weight": {}, "weather": {}, "wind_w": None, "venue_dir": None}
+        out = _empty()
         card = soup.find("table", class_=lambda c: c and "is-w748" in c)
+        col = _columns(card)
         for tb in (card.find_all("tbody") if card else []):
             tr = tb.find("tr")
             if not tr:
@@ -121,6 +173,7 @@ def fetch(date, jcd, rno, tries=2):
                 mw = re.fullmatch(r"(\d{2}\.\d)kg", t)
                 if mw and lane not in out["weight"]:
                     out["weight"][lane] = float(mw.group(1))
+            _extra(out, lane, tb, tds, col)
         for course, sp in enumerate(
                 soup.select(".table1_boatImage1 .table1_boatImage1Number")[:6], start=1):
             t = sp.get_text(strip=True)

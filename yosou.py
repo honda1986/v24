@@ -35,6 +35,7 @@ import official as OF
 import beforeinfo as BI
 import racecard as RC
 import officialcard as OC
+import oddsx as OX
 import select_rule as SR
 import second as SEC
 import third as THI
@@ -117,6 +118,19 @@ def snap_odds(date, jcd, rno, left, odds, done=False):
             f.write(json.dumps(row, separators=(",", ":")) + "\n")
     except (OSError, TypeError, ValueError) as e:
         print(f"  (オッズの記録に失敗: {e})")
+
+
+def snap_x(date, jcd, rno, left, x):
+    """3連単以外の賭式の判定時オッズを snap/ に1行足す（"x" の行。band_howto.md §30）。
+    3連単の行とは別にして、bt_snap.py などはこれまでどおり読めるようにする"""
+    try:
+        os.makedirs(SNAP_DIR, exist_ok=True)
+        row = {"t": datetime.now(OF.JST).strftime("%H:%M:%S"), "jcd": int(jcd),
+               "rno": int(rno), "left": None if left is None else int(left), "x": x}
+        with open(f"{SNAP_DIR}/{date}.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(row, separators=(",", ":")) + "\n")
+    except (OSError, TypeError, ValueError) as e:
+        print(f"  (他の賭式のオッズの記録に失敗: {e})")
 
 
 def prune(date):
@@ -727,6 +741,7 @@ def main():
     def skip(reason):
         skips[reason] = skips.get(reason, 0) + 1
 
+    seen_x = []         # この回に見たレース。最後に他の賭式のオッズを記録する
     for k, (jcd, rno, net, left) in enumerate(todo):
         # ★持ち時間を超えたら打ち切る。GitHub Actions のジョブ上限に当たると
         #   通知済みの記録も残らないまま丸ごと捨てられる（実測で経験）。
@@ -805,6 +820,7 @@ def main():
         odds = OF.fetch_odds(date, jcd, rno)
         if odds and not args.dry:
             snap_odds(date, jcd, rno, left, odds)
+            seen_x.append((jcd, rno, net))
         q, q1 = F.market_probs(odds) if odds else (None, None)
         if q is None:
             print(f"  {tag} オッズが取れません")
@@ -971,6 +987,20 @@ def main():
             odds = OF.fetch_odds(date, jcd, rno, verbose=False)
             if odds:
                 snap_odds(date, jcd, rno, left, odds, done=True)
+    # ★記録だけ：見たレースの単勝・複勝・2連単・2連複の判定時オッズ（band_howto.md §30）。
+    #   判定と通知が終わってから取るので、買い目は遅れない。後から取り直せない値。
+    #   3連複・拡連複と確定オッズは、翌朝 collect_odds.py が取る
+    #   ★持ち時間より早めに切る。PC は3分おきなので、1回が長引くと次の回が飛ぶ
+    if not args.dry:
+        for jcd, rno, net in seen_x:
+            if time.time() - t0 > args.budget - 30:
+                break
+            left = OF.mins_left(net, datetime.now(OF.JST))
+            if left is None or left < 1:
+                continue
+            x = OX.fetch(date, jcd, rno, pages=("oddstf", "odds2tf"))
+            if x:
+                snap_x(date, jcd, rno, left, x)
     if not args.dry and skips:
         site_log(date, None, None, None, None, None, None, None, None,
                  None, None, skips)

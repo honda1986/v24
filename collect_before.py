@@ -4,6 +4,7 @@
 
 引き継ぎメモ §7-1 の宿題。fetch_beforeinfo() は前から動いていたのに保存していなかった。
 展示ST・展示進入・チルト相当の情報は、貯め始めないと永久に検証できない。
+2026-11-11 から チルト・プロペラ・部品交換・調整重量・前走 も入れる（band_howto.md §30）。
 
   before/YYYYMMDD.json.gz
   {"date":"20260822",
@@ -63,7 +64,11 @@ def main():
                           # 水面基準の風向（w=5 追い風 / 13 向かい風、17 無風）と
                           # その場の水面の向き（band_howto.md §17-1）
                           "wind_w": info.get("wind_w"),
-                          "venue_dir": info.get("venue_dir")})
+                          "venue_dir": info.get("venue_dir"),
+                          # ★2026-11-11 から（band_howto.md §30）。チルト・プロペラ・部品交換・
+                          #   調整重量・前走（その日の前のレースの R・進入・ST・着順）
+                          **{k: {str(b): v for b, v in (info.get(k) or {}).items()}
+                             for k in ("tilt", "propeller", "parts", "adj_weight", "prev")}})
     if not races:
         print("取れませんでした")
         return
