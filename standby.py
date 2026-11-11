@@ -96,6 +96,10 @@ def motor_light(task):
                 "--out", "motor/latest.json", check=False)
     task.run_py("settle.py", "--kfile", kfile, "--raw", raw, check=False)
     task.run_py("calib.py", "--kfile", kfile, check=False)
+    # ★v22 の raw / tokuten が空の日の代わり（band_howto.md §31）。前日の分だけ
+    d = (R.now_jst() - R.timedelta(days=1)).strftime("%Y%m%d")
+    task.run_py("collect_raw.py", "--date", d, "--kfile", kfile, "--raw", raw,
+                "--tokuten", os.path.join(os.path.dirname(kfile), "tokuten"), check=False)
 
 
 def chores(repo, task, log):

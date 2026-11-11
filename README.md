@@ -80,6 +80,8 @@ v23 は取れなくても予想が出てしまい、ログを見ないと気づ�
 | `oddsx.py` | 3連単以外の賭式（単勝・複勝・2連単・2連複・3連複・拡連複）のオッズを公式から読む（band_howto.md §30） |
 | `collect_odds.py` | 前日の3連単以外の賭式の確定オッズを `oddsx/` に貯める。毎朝 runner が回す（§30） |
 | `backfill_before.py` | 過去の直前情報（チルト・部品交換・展示進入・展示ST など）をさかのぼって `before_hist/` に貯める。GitHub の `backfill.yml` で8本同時に回す（band_howto.md §30-1） |
+| `collect_raw.py` | v22 の raw / tokuten が空の日（2026-10-20〜など）の代わりを公式から作る（`raw24/` `tokuten24/`）。毎朝 runner と予備運転が回す。過去は `backfill_raw.yml`（band_howto.md §31） |
+| `rawsrc.py` | v22 の raw / tokuten を読む。空や欠けの日は raw24 / tokuten24 で代える。bt.py・train.py・settle.py がここを通す |
 | `index.html` | 予想サイト。6艇の内訳に**根拠**（オッズの見立てから上げ下げした要因。`features.explain`）、通算成績に**予想の精度** |
 
 ---

@@ -119,12 +119,18 @@ def rawmap(rawdir, date):
       raw を丸ごと checkout すると60MB超になるので、それは避ける。
     """
     blob = fetch_gz(f"{rawdir}/{date}.json.gz", RAW_URL.format(date))
-    if blob is None:
-        return None
-    try:
-        with gzip.open(io.BytesIO(blob), "rt", encoding="utf-8") as f:
-            rd = json.load(f)
-    except (OSError, ValueError):
+    rd = None
+    if blob is not None:
+        try:
+            with gzip.open(io.BytesIO(blob), "rt", encoding="utf-8") as f:
+                rd = json.load(f)
+        except (OSError, ValueError):
+            rd = None
+    # ★v22 の raw は 2026-10-20 から空。その日は v24 が公式から作った raw24/ を使う（§31）
+    if not (rd or {}).get("races"):
+        import rawsrc as RS
+        rd = RS.load_raw(None, date)
+    if not rd.get("races"):
         return None
     out = {}
     for r in rd.get("races") or []:

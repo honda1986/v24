@@ -75,9 +75,11 @@ def git(*a):
     return subprocess.run(["git", *a], capture_output=True, text=True)
 
 
-def push(message):
+def push(message, paths=(OUTDIR,)):
     """新しいファイルを足すだけなので、取り込み直して載せれば必ず通る。何度か試す"""
-    git("add", OUTDIR)
+    for p in paths:
+        if os.path.exists(p):
+            git("add", p)
     if git("diff", "--cached", "--quiet").returncode == 0:
         return True
     git("commit", "-q", "-m", message)

@@ -24,6 +24,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import features as F          # noqa: E402
 import third as S             # noqa: E402
+import rawsrc as RS           # noqa: E402
 
 
 def load_rows(raw_dir, tok_dir, pure_path):
@@ -32,15 +33,14 @@ def load_rows(raw_dir, tok_dir, pure_path):
     pk = p["date"].astype(np.int64) * 100000 + p["toban"]
     po = np.argsort(pk); pk = pk[po]
     pv = p["vals"][po][:, cols.index("mot_pure")]
-    tokf = {os.path.basename(x)[:8]: x for x in glob.glob(f"{tok_dir}/*.json.gz")}
-    rawf = sorted(glob.glob(f"{raw_dir}/*.json.gz"))
+    # ★v22 の raw / tokuten が空や欠けの日は raw24/ tokuten24/ で代える（band_howto.md §31）
+    tokf = RS.tokuten_files(tok_dir)
+    rawf = RS.raw_days(raw_dir)
     print(f"raw {len(rawf)}日 / tokuten {len(tokf)}日")
     X, Y, D = [], [], []
     t0 = time.time()
-    for k, path in enumerate(rawf):
-        d = os.path.basename(path)[:8]
-        with gzip.open(path, "rt", encoding="utf-8") as f:
-            rd = json.load(f)
+    for k, d in enumerate(rawf):
+        rd = RS.load_raw(raw_dir, d)
         tk = {}
         if d in tokf:
             with gzip.open(tokf[d], "rt", encoding="utf-8") as f:
