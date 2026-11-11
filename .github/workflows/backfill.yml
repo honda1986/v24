@@ -1,6 +1,7 @@
 name: backfill
 # 過去の直前情報をさかのぼって before_hist/ に貯める（band_howto.md §30、backfill_before.py）。
-# 手動で1回だけ動かす。8本を同時に走らせ、それぞれ 1秒に1ページ。
+# 手動で1回だけ動かす。10本を同時に走らせ、それぞれ8ページずつ同時に取る
+# （公式は GitHub から1ページ8〜10秒かかるが、同時に取っても遅くならない。約4〜5時間）。
 # 途中で止まっても、もう一度動かせば取れていない日だけ取る。
 on:
   workflow_dispatch:
@@ -22,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -42,4 +43,4 @@ jobs:
           git config user.name  github-actions
           git config user.email github-actions@github.com
           python backfill_before.py --from "${{ inputs.from }}" --to "${{ inputs.to }}" \
-            --shard ${{ matrix.shard }} --shards 8 --raw v22src/raw --budget 19800
+            --shard ${{ matrix.shard }} --shards 10 --threads 8 --raw v22src/raw --budget 19800
