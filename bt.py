@@ -26,6 +26,7 @@ import features as F          # noqa: E402
 import second as S            # noqa: E402
 import third as T             # noqa: E402
 import select_rule as SR      # noqa: E402
+import rawsrc as RS           # noqa: E402
 
 SEC_IDX = np.array([int(c[2]) - 1 for c in F.COMBOS])
 THI_IDX = np.array([int(c[4]) - 1 for c in F.COMBOS])
@@ -48,15 +49,13 @@ def collect(args):
                 kw[(d, r["jcd"], r["rno"])] = (r.get("wave"), r.get("wind"),
                                                r.get("wind_dir"))
     print(f"kfile {len(kw):,}レース", flush=True)
-    tokf = {os.path.basename(x)[:8]: x for x in glob.glob(f"{args.tokuten}/*.json.gz")}
+    # ★v22 の raw / tokuten が空や欠けの日は、v24 が公式から作ったもの（raw24/ tokuten24/）で代える（§31）
+    tokf = RS.tokuten_files(args.tokuten)
     out = []
-    rawf = [x for x in sorted(glob.glob(f"{args.raw}/*.json.gz"))
-            if args.frm <= int(os.path.basename(x)[:8]) <= args.to]
+    rawf = [x for x in RS.raw_days(args.raw) if args.frm <= int(x) <= args.to]
     t0 = time.time()
-    for k, path in enumerate(rawf):
-        d = os.path.basename(path)[:8]
-        with gzip.open(path, "rt", encoding="utf-8") as f:
-            rd = json.load(f)
+    for k, d in enumerate(rawf):
+        rd = RS.load_raw(args.raw, d)
         tk, meta = {}, {}
         if d in tokf:
             with gzip.open(tokf[d], "rt", encoding="utf-8") as f:

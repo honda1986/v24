@@ -1,0 +1,54 @@
+name: backfill_raw
+# v22 の raw / tokuten が空や欠けの日を、公式から作り直して raw24/ tokuten24/ に置く（band_howto.md §31、collect_raw.py）。
+# 手動で動かす。10本を同時に、各本8レースずつ同時に取る（公式は GitHub から1ページ8〜10秒）。
+# v22 にある日は作らない。all にチェックすると v22 にある日も作る（突き合わせ用）。
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: "この日から（YYYYMMDD）"
+        default: "20230801"
+      to:
+        description: "この日まで（YYYYMMDD）"
+        default: "20261110"
+      all:
+        description: "v22 にある日も作る（突き合わせ用）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  raw:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install numpy requests beautifulsoup4
+      - name: v22 の raw・tokuten・Kファイル
+        uses: actions/checkout@v4
+        with:
+          repository: honda1986/v22
+          path: v22src
+          sparse-checkout: |
+            raw
+            tokuten
+            kfile
+      - name: 作る
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          git config user.name  github-actions
+          git config user.email github-actions@github.com
+          python collect_raw.py --from "${{ inputs.from }}" --to "${{ inputs.to }}" \
+            --shard ${{ matrix.shard }} --shards 10 --threads 8 \
+            --kfile v22src/kfile --raw v22src/raw --tokuten v22src/tokuten \
+            --push-every 3 --budget 19800 ${{ inputs.all && '--all' || '' }}

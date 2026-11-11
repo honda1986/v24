@@ -43,7 +43,8 @@ from datetime import datetime, timedelta, timezone
 JST = timezone(timedelta(hours=9), "JST")
 
 # 取り込みと保存で面倒を見るもの。yosou.yml / motor.yml / prefetch.yml と同じ
-DATA_DIRS = ("state", "cache", "motor", "before", "odds_snap", "stats", "oddsx")
+DATA_DIRS = ("state", "cache", "motor", "before", "odds_snap", "stats", "oddsx",
+             "raw24", "tokuten24")
 DATA_FILES = ("history.json",)
 
 # ★PC と GitHub の引き継ぎ（2026-11-04、pc/README.md §5）
@@ -455,6 +456,11 @@ class Task:
         for k in (2, 1):
             d = (today - timedelta(days=k)).strftime("%Y%m%d")
             self.run_py("collect_odds.py", "--date", d, check=False)
+        # ★v22 の raw / tokuten が空の日の代わり（band_howto.md §31）。v22 にあれば作らない
+        for k in (2, 1):
+            d = (today - timedelta(days=k)).strftime("%Y%m%d")
+            self.run_py("collect_raw.py", "--date", d, "--kfile", kfile, "--raw", raw,
+                        "--tokuten", os.path.join(os.path.dirname(kfile), "tokuten"), check=False)
         if bad:
             raise bad
         return f"motor+settle: {now_jst():%Y%m%d}"
