@@ -58,6 +58,26 @@ class TestMaybeRun(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.v23, "yosou", "pc_alive.json")))
         self.assertIn(("push", "-q", "origin", "HEAD:main"), self.calls)
         self.assertIn(("reset", "-q", "--hard", "origin/main"), self.calls)
+        with open(os.path.join(self.v24, "state", "v23_pc.json")) as f:
+            self.assertEqual(json.load(f)["result"], "push")      # 結果は v24 の state に残る
+
+    def test_push_できなければ理由を_state_に残す(self):
+        def git(repo, *args, timeout=None):
+            if args[:2] == ("diff", "--cached"):
+                return False, ""
+            if args[0] == "push":
+                return False, "remote: Permission to honda1986/boatrace-appV23.git denied"
+            return True, ""
+        V.time.sleep, old = (lambda s: None), V.time.sleep
+        try:
+            r = V.maybe_run(self.v24, os.path.join(self.tmp, "v22"), sys.executable, self.lines.append,
+                            self.logs, time.time(), git)
+        finally:
+            V.time.sleep = old
+        self.assertEqual(r, "push できず")
+        with open(os.path.join(self.v24, "state", "v23_pc.json")) as f:
+            st = json.load(f)
+        self.assertTrue(any("denied" in b for b in st["bad"]))
 
     def test_15分たつまでは回さない(self):
         self.run_once()
