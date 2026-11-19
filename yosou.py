@@ -35,6 +35,7 @@ import official as OF
 import beforeinfo as BI
 import racecard as RC
 import officialcard as OC
+import officialsetsu as OS
 import oddsx as OX
 import select_rule as SR
 import second as SEC
@@ -235,6 +236,24 @@ def card(date, jcd):
     page["jcd"] = jcd          # parse_page は jcd を持たないので入れておく
     _save(path, page)
     return page
+
+
+def official_setsu(date, jcd, rno):
+    """uchisankaku が空のときの代わり。公式の出走表からそのレースの今節成績を作る（officialsetsu.py）。
+
+    ★2026-11-19 から uchisankaku が更新されず、その日は全レース「今節成績が取れません」で見送った。
+      登録番号・出走数・今節ST・日程・レース名は uchisankaku と一致、得点率は近似（ドリーム戦などでずれる）、
+      順位・減点・コース別は無し。どれもモデルの重要度は小さい（今節で合わせて0.5%）。
+      uchisankaku が戻れば card() がそちらを使う。
+    """
+    path = f"{CACHE_DIR}/os_{date}_{jcd:02d}_{rno}.json"
+    c = _load(path)
+    if c and c.get("races"):
+        return c
+    pg = OS.fetch_page(date, jcd, rno)
+    if pg:
+        _save(path, pg)
+    return pg
 
 
 TOP_N = 8          # 「出やすい順」に見せる3連単の点数
@@ -769,6 +788,10 @@ def main():
                           wave, wind)
             continue
         pg = card(date, jcd)
+        if not pg:
+            pg = official_setsu(date, jcd, rno)
+            if pg:
+                print(f"  {tag} 今節成績は公式の出走表で代えました（uchisankaku が空）")
         if not pg:
             print(f"  {tag} 今節成績が取れません")
             skip("データ欠")
