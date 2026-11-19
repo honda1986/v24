@@ -63,7 +63,24 @@ def due(state, key, every, now):
 
 def maybe_run(v24_repo, v22_dir, python, log, log_dir, started, git, push=True):
     """v24 の yosou の回のあとに呼ぶ。15分たっていて時間が残っていれば v23 を1周回す。
-    git は runner.git（(ok, 出力) を返す）。何があっても例外は外に出さない"""
+    git は runner.git（(ok, 出力) を返す）。何があっても例外は外に出さない。
+
+    ★PC のログは GitHub に上がらないので、回したときの結果を v24 の state/v23_pc.json に残す
+      （次の周の push で上がる）。「★」の付いた行（失敗の理由）を最後の5行まで"""
+    bad = []
+
+    def log2(msg):
+        log(msg)
+        if "★" in msg:
+            bad.append(msg.strip()[:300])
+    res = _run(v24_repo, v22_dir, python, log2, log_dir, started, git, push)
+    if res not in ("まだ", "時間なし"):
+        _save(os.path.join(v24_repo, "state", "v23_pc.json"),
+              {"t": now_jst().isoformat(timespec="seconds"), "result": res, "bad": bad[-5:]})
+    return res
+
+
+def _run(v24_repo, v22_dir, python, log, log_dir, started, git, push):
     now = now_jst()
     sp = os.path.join(log_dir, "v23_state.json")
     st = _load(sp, {})
