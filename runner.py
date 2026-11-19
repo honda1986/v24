@@ -500,6 +500,7 @@ def main(argv=None):
     ap.add_argument("--host", default="pc", help="心拍の名前（PC は pc のまま）")
     args = ap.parse_args(argv)
 
+    t_start = time.time()                 # v23 を回すときの持ち時間の起点（タスクは10分で切られる）
     repo = os.path.abspath(args.repo)
     if not os.path.isdir(os.path.join(repo, ".git")):
         print(f"v24 のフォルダではありません: {repo}")
@@ -539,6 +540,15 @@ def main(argv=None):
         if args.task in ("motor", "prefetch"):    # 予備運転が「今日はもう済んだ」と分かるように
             touch_alive(repo, args.host, **{args.task: now_jst().strftime("%Y%m%d")})
         save(repo, message, log, push=args.push)
+        # ★v23 も PC で回す（2026-11-19〜。公式が GitHub からの接続を断るため。v23pc.py）。
+        #   v24 のあとに、残りの時間で15分ごとに1周。転んでも v24 には響かせない
+        if args.task == "yosou" and args.host == "pc" and not args.dry:
+            try:
+                import v23pc
+                v23pc.maybe_run(repo, os.path.abspath(args.v22), task.python, log, log_dir,
+                                t_start, git, push=args.push)
+            except Exception as e:
+                log(f"  ★v23 は失敗: {type(e).__name__}: {e}")
         log(f"=== {args.task} 終わり ===")
     return 0
 

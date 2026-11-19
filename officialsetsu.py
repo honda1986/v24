@@ -95,7 +95,7 @@ def parse(html, date):
         m = re.search(r"(\d{4})\s*/\s*(A1|A2|B1|B2)\s*(.*?)\s+\S+/\S+\s+\d", c0[2] if len(c0) > 2 else "")
         lanes.append({
             "lane": lane, "toban": cd.get("toban"), "cls": m.group(2) if m else None,
-            "name": m.group(3) if m else "",
+            "name": re.sub(r"\s+", " ", m.group(3)).strip() if m else "",
             "n_runs": min(len(runs), MAX_RUNS),
             "st_setsu": round(sum(sts) / len(sts), 2) if sts else None,
             "tokuten": round(sum(pts) / len(pts), 2) if pts else None,
