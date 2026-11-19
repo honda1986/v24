@@ -45,6 +45,8 @@ class TestMaybeRun(unittest.TestCase):
         self.calls.append(args)
         if args[:2] == ("diff", "--cached"):
             return False, ""          # 変更あり
+        if args[:2] == ("config", "--get"):
+            return False, ""          # 名前がまだ無い
         return True, ""
 
     def run_once(self, started=None):
@@ -58,8 +60,22 @@ class TestMaybeRun(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.v23, "yosou", "pc_alive.json")))
         self.assertIn(("push", "-q", "origin", "HEAD:main"), self.calls)
         self.assertIn(("reset", "-q", "--hard", "origin/main"), self.calls)
+        self.assertIn(("config", "user.name", "boat-pc"), self.calls)     # commit する名前を入れる
         with open(os.path.join(self.v24, "state", "v23_pc.json")) as f:
             self.assertEqual(json.load(f)["result"], "push")      # 結果は v24 の state に残る
+
+    def test_commit_できなければそこで止める(self):
+        def git(repo, *args, timeout=None):
+            self.calls.append(args)
+            if args[:2] == ("diff", "--cached"):
+                return False, ""
+            if args[0] == "commit":
+                return False, "Author identity unknown"
+            return True, ""
+        r = V.maybe_run(self.v24, os.path.join(self.tmp, "v22"), sys.executable, self.lines.append,
+                        self.logs, time.time(), git)
+        self.assertEqual(r, "commit できず")
+        self.assertFalse(any(c[0] == "push" for c in self.calls))
 
     def test_push_できなければ理由を_state_に残す(self):
         def git(repo, *args, timeout=None):

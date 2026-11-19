@@ -97,6 +97,11 @@ def _run(v24_repo, v22_dir, python, log, log_dir, started, git, push):
         log("  v23 を clone しました" if ok else f"  ★v23 を clone できず: {out.strip()[:200]}")
         if not ok:
             return "clone できず"
+    # ★commit する名前。v24 は runner.py が入れているが、v23 の clone には無い。無いと commit が黙って失敗し、
+    #   push は「送るものが無い」で成功に見える（2026-11-19 の初回がこれ）
+    for key, val in (("user.name", "boat-pc"), ("user.email", "boat-pc@local")):
+        if not git(d, "config", "--get", key)[0]:
+            git(d, "config", key, val)
     ok, out = git(d, "fetch", "-q", "origin", "main")
     if ok:
         git(d, "reset", "-q", "--hard", "origin/main")       # このフォルダは v23 のためだけ。毎回リモートに合わせる
@@ -132,16 +137,24 @@ def _run(v24_repo, v22_dir, python, log, log_dir, started, git, push):
             git(d, "add", f)
     if git(d, "diff", "--cached", "--quiet")[0]:
         return "変更なし"
-    git(d, "commit", "-q", "-m", f"yosou: 更新 (PC {now_jst():%H%M})")
+    ok, out = git(d, "commit", "-q", "-m", f"yosou: 更新 (PC {now_jst():%H%M})")
+    if not ok:
+        log(f"  ★v23 を commit できず: {out.strip()[:200]}")
+        return "commit できず"
     if not push:
         return "commit だけ"
     for i in range(3):
         # history.json がぶつかったらこちらを採る（GitHub の yosou.yml と同じ。次の周回で集計し直す）
         if git(d, "pull", "-q", "--rebase", "--autostash", "-X", "theirs", "origin", "main")[0]:
             ok, out = git(d, "push", "-q", "origin", "HEAD:main")
-            if ok:
+            # ★「成功」でも本当に届いたかを確かめる（手元の HEAD がリモートに入ったか）
+            if ok and git(d, "fetch", "-q", "origin", "main")[0] and \
+                    git(d, "merge-base", "--is-ancestor", "HEAD", "origin/main")[0]:
                 log("  v23 を push しました")
                 return "push"
+            if ok:
+                log("  ★v23 の push は成功と返ったのに、リモートに入っていません")
+                return "push できず"
             log(f"  ★v23 を push できず: {out.strip()[:200]}")
         else:
             git(d, "rebase", "--abort")
