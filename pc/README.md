@@ -330,3 +330,16 @@ C:\boat\venv\Scripts\python pc_selftest.py
 runner の取り込み（通知済みの和集合・settle の結果が消えないこと）、ロック、
 push 失敗、文字コード、改行、watchdog の判定を、GitHub にも競艇サイトにも
 触らずに確かめます。
+
+---
+
+## v23 も PC で回す（2026-11-19〜）
+
+公式（boatrace.jp）が GitHub Actions からの接続を断るようになったので、v23 の予想も PC で回します。
+**PC 側の作業はありません。** `boat_yosou` の回（v24 の予想）のあとに、`runner.py` が15分ごとに
+`v23pc.py` を呼び、`C:\boat\v23` に v23 を置いて（無ければ clone）`yosou.py` を回し、v23 のリポジトリに push します。
+ログは v24 と同じ `C:\boat\logs\yosou_<日付>.log` の「--- v23 ---」の行です。
+
+- 通知の宛先: v23 の GitHub Secrets の NTFY_TOPIC が v24 と違うときだけ、`setx NTFY_TOPIC_V23 "v23の合言葉"` を入れてください
+  （入れなければ v24 と同じ NTFY_TOPIC に送ります）
+- push には v24 と同じ GitHub の認証を使います。push できないときはログに「★v23 を push できず」と出ます
