@@ -101,6 +101,16 @@ class TestMaybeRun(unittest.TestCase):
         self.assertEqual(self.run_once(), "まだ")
         self.assertEqual(self.calls, [])
 
+    def test_前回の始めから13分で次を回す(self):
+        from datetime import timedelta
+        os.makedirs(self.logs, exist_ok=True)
+        sp = os.path.join(self.logs, "v23_state.json")
+        for mins, want in ((12, "まだ"), (13, "push")):
+            t = (V.now_jst() - timedelta(minutes=mins)).isoformat(timespec="seconds")
+            with open(sp, "w") as f:
+                json.dump({"yosou": t, "motor": t}, f)
+            self.assertEqual(self.run_once(), want, mins)
+
     def test_時間が残っていなければ次の回へ(self):
         self.assertEqual(self.run_once(started=time.time() - 400), "時間なし")
         self.assertEqual(self.calls, [])
