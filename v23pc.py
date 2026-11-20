@@ -23,7 +23,9 @@ from datetime import datetime, timedelta, timezone
 
 JST = timezone(timedelta(hours=9))
 URL = "https://github.com/honda1986/boatrace-appV23.git"
-EVERY_MIN = 15            # yosou.py を回す間隔（GitHub と同じ）
+EVERY_MIN = 14            # yosou.py を回す間隔。前回の「始め」から13分たっていれば回す（due は1分の余裕）。
+                          # ★3分おきの回に乗るので実際は15分ごと。前は「終わり」から15分で数えて16〜18分あき、
+                          #   v23 の本命の通知（締切22〜38分前の16分の窓）を飛ばすレースが出えた（2026-11-20）
 MOTOR_EVERY_MIN = 60      # モーター純度を作り直す間隔（前日の Kファイルは朝9〜10時ごろ届く）
 TASK_LIMIT = 600          # boat_yosou のタスクの打ち切り（register_tasks.ps1 の10分）
 MIN_LEFT = 240            # 残りがこれより短ければ、この回は回さない
@@ -128,7 +130,7 @@ def _run(v24_repo, v22_dir, python, log, log_dir, started, git, push):
         st["motor"] = now.isoformat(timespec="seconds")
     left = TASK_LIMIT - (time.time() - started) - 60
     py("yosou.py", timeout=max(60, left))
-    st["yosou"] = now_jst().isoformat(timespec="seconds")
+    st["yosou"] = now.isoformat(timespec="seconds")          # 始めた時刻で数える
     _save(sp, st)
     # 心拍。GitHub の yosou.yml はこれが20分以内なら休む（両方が同時に書かないように）
     _save(os.path.join(d, "yosou", "pc_alive.json"), {"t": now_jst().isoformat(timespec="seconds")})
